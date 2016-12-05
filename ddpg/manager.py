@@ -50,7 +50,6 @@ class Manager(object):
                num_episodes, num_training_episodes, average_reward, stddev_reward)
       self.agent.Save(num_training_episodes)
 
-
   def RunEpisode(self, is_training=False, record_video=False, show=False):
     self.environment.monitor.configure(lambda _: record_video)
     total_reward = 0.
@@ -67,7 +66,7 @@ class Manager(object):
       total_reward += reward
       timesteps += 1
       done = (timesteps > self.options.max_timesteps_per_episode) or done
-      self.agent.GiveReward(reward, done)
+      self.agent.GiveReward(reward, done, observation)
     return total_reward, timesteps
 
 

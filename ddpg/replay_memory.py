@@ -8,14 +8,16 @@ class ReplayMemory(object):
     self.max_capacity = max_capacity
     self.buffer_actions = np.empty((max_capacity,) + tuple(action_shape), dtype=np.float32)
     self.buffer_observations = np.empty((max_capacity,) + tuple(observation_shape), dtype=np.float32)
+    self.buffer_next_observations = np.empty((max_capacity,) + tuple(observation_shape), dtype=np.float32)
     self.buffer_rewards = np.empty((max_capacity, 1), dtype=np.float32)
     self.buffer_done = np.empty((max_capacity, 1), dtype=np.bool)
     self.current_index = 0
 
-  def Add(self, action, observation, reward, done):
+  def Add(self, action, observation, reward, done, next_observation):
     i = self.current_index
     self.buffer_actions[i, :] = action
     self.buffer_observations[i, :] = observation
+    self.buffer_next_observations[i, :] = next_observation
     self.buffer_rewards[i, :] = reward
     self.buffer_done[i, :] = done
     self.current_index = int((i + 1) % self.max_capacity)
@@ -30,5 +32,5 @@ class ReplayMemory(object):
     return (self.buffer_actions[indices, :],
             self.buffer_observations[indices, :],
             self.buffer_rewards[indices, :],
-            self.buffer_done[indices, :])
-    # To do sample future observation too?
+            self.buffer_done[indices, :],
+            self.buffer_next_observations[indices, :])

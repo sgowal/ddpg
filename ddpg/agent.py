@@ -50,8 +50,8 @@ class Agent(object):
       self.action = one_hot_encoding
     return action
 
-  def GiveReward(self, reward, done):
-    self.replay_memory.Add(self.action, self.observation, reward, done)
+  def GiveReward(self, reward, done, next_observation):
+    self.replay_memory.Add(self.action, self.observation, reward, done, next_observation)
     # Train.
 
   def Save(self, checkpoint_index):
