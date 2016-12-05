@@ -2,4 +2,4 @@ Based on the following paper: ["Continuous control with deep reinforcement learn
 
 ## Installation
 
-Install [Gym](https://github.com/openai/gym#installation) and [TensorFlow](hhttps://www.tensorflow.org/get_started/os_setup.html).
+Install [Gym](https://github.com/openai/gym#installation) and [TensorFlow](https://www.tensorflow.org/get_started/os_setup.html).
