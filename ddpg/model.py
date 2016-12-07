@@ -89,12 +89,17 @@ class Model(object):
     with tf.control_dependencies([train_critic]):
       train_critic = update_target_critic
 
-    # TODO TODO
-
     # Create relevant functions.
     with self.session.as_default():
       self.Reset = WrapComputationalGraph(None, self.reset_ops)
+      self._NoisyAct = WrapComputationalGraph(input_observation, noisy_action)
+      self._Act = WrapComputationalGraph(input_observation, action)
+      self.Train = WrapComputationalGraph(
+          (input_action, input_observation, input_reward, input_done, input_next_observation),
+          (train_actor, train_critic))
 
+  def Act(self, observation, add_noise=False):
+    return self._NoisyAct(observation) if add_noise else self._Act(observation)
 
   def ActorNetworkParameters(self, device='/cpu:0'):
     params = []

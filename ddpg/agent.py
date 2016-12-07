@@ -7,6 +7,8 @@ import replay_memory
 
 
 _REPLAY_MEMORY_SIZE = 1e6
+_BATCH_SIZE = 64
+_WARMUP_TIMESTEPS = _BATCH_SIZE * 10
 
 # Logging.
 LOG = logging.getLogger(__name__)
@@ -51,8 +53,10 @@ class Agent(object):
 
   def GiveReward(self, reward, done, next_observation):
     self.replay_memory.Add(self.action, self.observation, reward, done, next_observation)
-    # Train.
-    # TODO TODO.
+    if len(self.replay_memory) > _WARMUP_TIMESTEPS:
+      batch = self.replay_memory.Sample(_BATCH_SIZE)
+      # Async?
+      self.model.Train(*batch)
 
   def Save(self, checkpoint_index):
     filename = self.model.Save(step=checkpoint_index)
