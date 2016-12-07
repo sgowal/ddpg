@@ -15,15 +15,26 @@ _TAU = 1e-3  # Leaky-integrator for parameters.
 
 class Model(object):
 
-  def __init__(self, action_shape, observation_shape):
+  def __init__(self, action_shape, observation_shape, checkpoint_directory, restore=False):
     self.session = tf.Session()
     self.action_shape = action_shape
     self.observation_shape = observation_shape
     # Create networks.
     self.Create()
+    # Create saver.
+    self.saver = tf.train.Saver(max_to_keep=1)
+    checkpoint = tf.train.latest_checkpoint(checkpoint_directory)
+    if checkpoint and restore:
+      self.saver.restore(self.session, checkpoint)
+    else:
+      tf.initialize_all_variables().run(session=self.session)  # To be replaced with global_variables_initializer.
+    self.session.graph.finalize()
 
   def __del__(self):
     self.session.close()
+
+  def Save(self, step):
+    return self.saver.save(self.session, 'model', global_step=step)
 
   def Create(self):
     # Contains all operations to reset the networks when an episode starts.
@@ -56,17 +67,33 @@ class Model(object):
     with tf.control_dependencies([train_actor]):
       train_actor = update_target_actor
 
-    # Training critic.
+    # Critic network.
     input_action = tf.placeholder(tf.float32, shape=(None,) + self.action_shape)
     input_reward = tf.placeholder(tf.float32, shape=(None,))
-    input_done = tf.placeholder(tf.float32, shape=(None,))
-    # input_reward = tf.placeholder(tf.float32, shape=(None,))
+    input_done = tf.placeholder(tf.bool, shape=(None,))
+    input_next_observation = tf.placeholder(tf.float32, shape=(None,) + self.observation_shape)
+    q_value = self.CriticNetwork(input_action, input_observation, parameters_critic)
+    q_value_target = self.CriticNetwork(self.ActorNetwork(input_next_observation, parameters_target_actor),
+                                        input_next_observation, parameters_target_critic)
+    q_value_target = tf.stop_gradient(  # Gradient are not propagated to the target networks.
+        tf.select(input_done, input_reward, input_reward + _DISCOUNT_FACTOR * q_value_target))
+
+    # Training critic.
+    td_error = q_value - q_value_target
+    loss = tf.reduce_mean(tf.square(td_error), 0)  # Minimize TD-error.
+    loss += tf.add_n([_L2_WEIGHT_DECAY * tf.nn.l2_loss(p) for p in parameters_critic])  # Ignore bias?
+    optimizer = tf.train.AdamOptimizer(learning_rate=_LEARNING_RATE_VALUE)
+    gradients = optimizer.compute_gradients(loss, var_list=parameters_critic)
+    train_critic = optimizer.apply_gradients(gradients)
+    # Training the critic include propagating the learned parameters.
+    with tf.control_dependencies([train_critic]):
+      train_critic = update_target_critic
 
     # TODO TODO
 
     # Create relevant functions.
-    self.Reset = WrapComputationalGraph(None, self.reset_ops)
-
+    with self.session.as_default():
+      self.Reset = WrapComputationalGraph(None, self.reset_ops)
 
 
   def ActorNetworkParameters(self, device='/cpu:0'):
@@ -165,7 +192,7 @@ class Model(object):
           w = params[index]
           b = params[index + 1]
           index += 2
-          return tf.nn.xw_plus_b(previous_input, w, b)
+          return tf.squeeze(tf.nn.xw_plus_b(previous_input, w, b))
 
 
 class WrapComputationalGraph(object):

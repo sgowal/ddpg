@@ -30,12 +30,11 @@ class Agent(object):
     self.replay_memory = replay_memory.ReplayMemory(_REPLAY_MEMORY_SIZE, self.action_space_shape, observation_space_shape)
     LOG.info('Initialized agent with actions %s and observations %s',
              str(self.action_space_shape), str(observation_space_shape))
-    self.checkpoint_directory = checkpoint_directory
     # Tensorflow model.
-    self.model = model.Model(self.action_space_shape, observation_space_shape)
+    self.model = model.Model(self.action_space_shape, observation_space_shape, checkpoint_directory)
 
   def Reset(self):
-    pass
+    self.model.Reset()
 
   def Observe(self, observation):
     self.observation = observation
@@ -53,6 +52,8 @@ class Agent(object):
   def GiveReward(self, reward, done, next_observation):
     self.replay_memory.Add(self.action, self.observation, reward, done, next_observation)
     # Train.
+    # TODO TODO.
 
   def Save(self, checkpoint_index):
-    LOG.info('Saving checkpoint %d in %s', checkpoint_index, self.checkpoint_directory)
+    filename = self.model.Save(step=checkpoint_index)
+    LOG.info('Saving checkpoint %s', filename)
