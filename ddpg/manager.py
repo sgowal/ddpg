@@ -33,6 +33,9 @@ class Manager(object):
       stddev_reward = np.std(rewards)
       LOG.info(u'%d-episode evaluation average reward (after %d episodes): %.2f ± %.2f',
                self.environment.spec.trials, num_training_episodes, average_reward, stddev_reward)
+      if self.environment.spec.reward_threshold and average_reward > self.environment.spec.reward_threshold:
+        LOG.info('Surpassing reward threshold of %.2f. Stopping...', self.environment.spec.reward_threshold)
+        break
 
       # Train.
       training_timesteps = 0
@@ -61,12 +64,12 @@ class Manager(object):
       if show:
         self.environment.render()
       self.agent.Observe(observation)
-      action = self.agent.Act()
+      action = self.agent.Act(is_training=is_training)
       observation, reward, done, _ = self.environment.step(action)
       total_reward += reward
       timesteps += 1
-      done = (timesteps > self.options.max_timesteps_per_episode) or done
-      self.agent.GiveReward(reward, done, observation)
+      done = (timesteps >= self.options.max_timesteps_per_episode) or done
+      self.agent.GiveReward(reward, done, observation, is_training=is_training)
     return total_reward, timesteps
 
 

@@ -17,7 +17,7 @@ LOG.setLevel(logging.INFO)
 
 class Agent(object):
 
-  def __init__(self, action_space, observation_space, checkpoint_directory):
+  def __init__(self, action_space, observation_space, checkpoint_directory, device='/cpu:0'):
     self.action_space = action_space
     if isinstance(action_space, gym.spaces.Discrete):
       # The following is a hack that casts the discrete problems to continuous ones.
@@ -33,7 +33,8 @@ class Agent(object):
     LOG.info('Initialized agent with actions %s and observations %s',
              str(self.action_space_shape), str(observation_space_shape))
     # Tensorflow model.
-    self.model = model.Model(self.action_space_shape, observation_space_shape, checkpoint_directory)
+    self.model = model.Model(self.action_space_shape, observation_space_shape, checkpoint_directory,
+                             device=device)
 
   def Reset(self):
     self.model.Reset()
@@ -41,21 +42,19 @@ class Agent(object):
   def Observe(self, observation):
     self.observation = observation
 
-  def Act(self):
-    action = self.action_space.sample()
-    if self.continuous_actions:
-      self.action = action
-    else:
-      one_hot_encoding = np.zeros(self.action_space_shape)
-      one_hot_encoding[action] = 1.
-      self.action = one_hot_encoding
+  def Act(self, is_training=False):
+    # Act randomly initially.
+    action = self.action = self.model.Act(self.observation, add_noise=is_training)
+    if not self.continuous_actions:
+      action = np.argmax(self.action)
     return action
 
-  def GiveReward(self, reward, done, next_observation):
+  def GiveReward(self, reward, done, next_observation, is_training=False):
+    if not is_training:
+      return
     self.replay_memory.Add(self.action, self.observation, reward, done, next_observation)
-    if len(self.replay_memory) > _WARMUP_TIMESTEPS:
+    if len(self.replay_memory) >= _WARMUP_TIMESTEPS:
       batch = self.replay_memory.Sample(_BATCH_SIZE)
-      # Async?
       self.model.Train(*batch)
 
   def Save(self, checkpoint_index):

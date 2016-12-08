@@ -23,6 +23,7 @@ flags = tf.app.flags
 flags.DEFINE_string('environment', None, 'Gym environment.')
 flags.DEFINE_string('search', None, 'Lists all Gym environments that correspond to the input regular expression.')
 flags.DEFINE_string('output_directory', None, 'Directory where results are stored.')
+flags.DEFINE_string('device', '/cpu:0', 'Device on which to run TensorFlow.')
 flags.DEFINE_bool('list', False, 'Shows list of Gym environments.')
 flags.DEFINE_bool('force', False, 'Overwrite --output_directory if it already exists.')
 
@@ -62,12 +63,16 @@ def Run():
   assert FLAGS.environment, '--environment must be specified'
   if not CreateDirectory(FLAGS.output_directory, FLAGS.force):
     return
+  checkpoint_directory = os.path.join(FLAGS.output_directory, 'checkpoints')
+  if not CreateDirectory(checkpoint_directory):
+    return
 
   # Create environment.
   environment = gym.make(FLAGS.environment)
   # Create Agent that will interact with the environment.
   agent = ddpg.Agent(environment.action_space, environment.observation_space,
-                     checkpoint_directory=os.path.join(FLAGS.output_directory, 'checkpoints'))
+                     checkpoint_directory=checkpoint_directory,
+                     device=FLAGS.device)
   # Start experiment.
   options = ddpg.ParseFlags(FLAGS)
   ddpg.Start(environment, agent, options)
