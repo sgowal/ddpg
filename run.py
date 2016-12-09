@@ -26,11 +26,12 @@ flags.DEFINE_string('output_directory', None, 'Directory where results are store
 flags.DEFINE_string('device', '/cpu:0', 'Device on which to run TensorFlow.')
 flags.DEFINE_bool('list', False, 'Shows list of Gym environments.')
 flags.DEFINE_bool('force', False, 'Overwrite --output_directory if it already exists.')
+flags.DEFINE_bool('restore', False, 'Restore from a previous Run.')
 
 # Flags for general options.
 flags.DEFINE_integer('max_timesteps_per_episode', 10000, 'Maximum number of timesteps per episode.')
 flags.DEFINE_integer('evaluate_after_timesteps', 10000, 'Number of training timesteps between evaluations.')
-flags.DEFINE_integer('max_episodes', 1000, 'Maximum number of training episodes.')
+flags.DEFINE_integer('max_timesteps', 1000000, 'Maximum number of training timesteps.')
 FLAGS = flags.FLAGS
 
 
@@ -61,21 +62,23 @@ def Run():
     return
   assert FLAGS.output_directory, '--output_directory must be specified'
   assert FLAGS.environment, '--environment must be specified'
-  if not CreateDirectory(FLAGS.output_directory, FLAGS.force):
-    return
   checkpoint_directory = os.path.join(FLAGS.output_directory, 'checkpoints')
-  if not CreateDirectory(checkpoint_directory):
-    return
+  if not FLAGS.restore:
+    if not CreateDirectory(FLAGS.output_directory, FLAGS.force):
+      return
+    if not CreateDirectory(checkpoint_directory):
+      return
 
   # Create environment.
   environment = gym.make(FLAGS.environment)
   # Create Agent that will interact with the environment.
   agent = ddpg.Agent(environment.action_space, environment.observation_space,
                      checkpoint_directory=checkpoint_directory,
-                     device=FLAGS.device)
+                     device=FLAGS.device, restore=FLAGS.restore)
   # Start experiment.
   options = ddpg.ParseFlags(FLAGS)
-  ddpg.Start(environment, agent, options)
+  results = ddpg.Start(environment, agent, options)
+  results.PlotRewards()
 
 
 if __name__ == '__main__':

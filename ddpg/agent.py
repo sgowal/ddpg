@@ -17,7 +17,7 @@ LOG.setLevel(logging.INFO)
 
 class Agent(object):
 
-  def __init__(self, action_space, observation_space, checkpoint_directory, device='/cpu:0'):
+  def __init__(self, action_space, observation_space, checkpoint_directory, restore=False, device='/cpu:0'):
     self.action_space = action_space
     if isinstance(action_space, gym.spaces.Discrete):
       # The following is a hack that casts the discrete problems to continuous ones.
@@ -34,7 +34,7 @@ class Agent(object):
              str(self.action_space_shape), str(observation_space_shape))
     # Tensorflow model.
     self.model = model.Model(self.action_space_shape, observation_space_shape, checkpoint_directory,
-                             device=device)
+                             restore=restore, device=device)
 
   def Reset(self):
     self.model.Reset()

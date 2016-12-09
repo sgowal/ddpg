@@ -1,3 +1,4 @@
+import logging
 import math
 import numpy as np
 import operator
@@ -14,6 +15,10 @@ _EXPLORATION_NOISE_THETA = 0.15  # Ornstein-Uhlenbeck process.
 _EXPLORATION_NOISE_SIGMA = 0.2
 _TAU = 1e-3  # Leaky-integrator for parameters.
 
+# Logging.
+LOG = logging.getLogger(__name__)
+LOG.setLevel(logging.INFO)
+
 
 class Model(object):
 
@@ -29,6 +34,7 @@ class Model(object):
     self.checkpoint_directory = checkpoint_directory
     checkpoint = tf.train.latest_checkpoint(checkpoint_directory)
     if checkpoint and restore:
+      LOG.info('Restoring from previous checkpoint: %s', checkpoint)
       self.saver.restore(self.session, checkpoint)
     else:
       tf.initialize_all_variables().run(session=self.session)  # To be replaced with global_variables_initializer.
