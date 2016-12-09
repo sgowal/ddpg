@@ -77,8 +77,7 @@ def Run():
                      device=FLAGS.device, restore=FLAGS.restore)
   # Start experiment.
   options = ddpg.ParseFlags(FLAGS)
-  results = ddpg.Start(environment, agent, options)
-  results.PlotRewards()
+  ddpg.Start(environment, agent, options)
 
 
 if __name__ == '__main__':

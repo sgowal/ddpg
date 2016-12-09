@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 
 import logging
-import matplotlib.pyplot as plt
 import numpy as np
 import os
+import tensorflow as tf
 
 # Logging.
 LOG = logging.getLogger(__name__)
@@ -18,12 +18,38 @@ class Manager(object):
     self.options = options
     environment.monitor.start(os.path.join(options.output_directory, 'monitor'),
                               video_callable=lambda _: False, force=True)
-    self.mean_rewards_over_timesteps = []
-    self.std_rewards_over_timesteps = []
-    self.training_timesteps = []
+    # Log performance.
+    self.test_writer = tf.train.SummaryWriter(os.path.join(options.output_directory, 'test'))
+    self.train_writer = tf.train.SummaryWriter(os.path.join(options.output_directory, 'train'))
 
   def __del__(self):
     self.environment.monitor.close()
+
+  def WriteResultSummary(self, timestep, values, is_training=False):
+    values = np.array(values)
+    min_value = np.min(values)
+    max_value = np.max(values)
+    sum_value = np.sum(values)
+    sum_squares_value = np.sum(np.square(values))
+    mean_value = np.mean(values)
+    std_value = np.std(values)
+    hist, bin_edges = np.histogram(values, bins=10)
+    summary = tf.Summary(value=[
+        tf.Summary.Value(tag="Rewards", histo=tf.HistogramProto(
+            min=min_value, max=max_value, sum=sum_value, sum_squares=sum_squares_value,
+            bucket_limit=bin_edges[1:], bucket=hist)),
+        tf.Summary.Value(tag='Average reward', simple_value=mean_value),
+        tf.Summary.Value(tag='Standard deviation of reward', simple_value=std_value),
+    ])
+    if is_training:
+      self.train_writer.add_summary(summary, timestep)
+    else:
+      self.test_writer.add_summary(summary, timestep)
+    # Verbose output.
+    LOG.info(u'%d-episode %s average reward (after %d timesteps): %.2f ± %.2f',
+             self.environment.spec.trials, 'training' if is_training else 'evaluation',
+             timestep, mean_value, std_value)
+    return mean_value
 
   def Run(self):
     num_training_timesteps = 0
@@ -32,13 +58,7 @@ class Manager(object):
       rewards = []
       for i in range(self.environment.spec.trials):
         rewards.append(self.RunEpisode(is_training=False, record_video=i == 0)[0])
-      average_reward = np.mean(rewards)
-      stddev_reward = np.std(rewards)
-      self.mean_rewards_over_timesteps.append(average_reward)
-      self.std_rewards_over_timesteps.append(stddev_reward)
-      self.training_timesteps.append(num_training_timesteps)
-      LOG.info(u'%d-episode evaluation average reward (after %d timesteps): %.2f ± %.2f',
-               self.environment.spec.trials, num_training_timesteps, average_reward, stddev_reward)
+      average_reward = self.WriteResultSummary(num_training_timesteps, rewards, is_training=False)
       if self.environment.spec.reward_threshold and average_reward > self.environment.spec.reward_threshold:
         LOG.info('Surpassing reward threshold of %.2f. Stopping...', self.environment.spec.reward_threshold)
         break
@@ -53,17 +73,9 @@ class Manager(object):
         training_timesteps += t
         num_episodes += 1
       num_training_timesteps += training_timesteps
-      average_reward = np.mean(rewards)
-      stddev_reward = np.std(rewards)
-      LOG.info(u'%d-episode training average reward (after %d timesteps): %.2f ± %.2f',
-               num_episodes, num_training_timesteps, average_reward, stddev_reward)
+      self.WriteResultSummary(num_training_timesteps, rewards, is_training=True)
       self.agent.Save(num_training_timesteps)
-    self.mean_rewards_over_timesteps = np.array(self.mean_rewards_over_timesteps)
-    self.std_rewards_over_timesteps = np.array(self.std_rewards_over_timesteps)
-    self.training_timesteps = np.array(self.training_timesteps)
-    max_reward = np.max(self.mean_rewards_over_timesteps)
-    self.mean_rewards_over_timesteps /= max_reward
-    self.std_rewards_over_timesteps /= max_reward
+    LOG.info('To visualize results: tensorboard --logdir="%s"' % self.output_directory)
 
   def RunEpisode(self, is_training=False, record_video=False, show=False):
     self.environment.monitor.configure(lambda _: record_video)
@@ -84,21 +96,7 @@ class Manager(object):
       self.agent.GiveReward(reward, done, observation, is_training=is_training)
     return total_reward, timesteps
 
-  def PlotRewards(self):
-    plt.figure()
-    plt.plot(self.training_timesteps, self.mean_rewards_over_timesteps, 'k')
-    plt.fill_between(
-        self.training_timesteps,
-        self.mean_rewards_over_timesteps - self.std_rewards_over_timesteps,
-        self.mean_rewards_over_timesteps + self.std_rewards_over_timesteps,
-        facecolor='black', alpha=0.1)
-    plt.ylim(bottom=0)
-    plt.xlabel('Steps')
-    plt.ylabel('Normalized Reward')
-    plt.show()
-
 
 def Start(environment, agent, options):
   manager = Manager(environment, agent, options)
   manager.Run()
-  return manager
