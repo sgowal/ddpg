@@ -87,6 +87,7 @@ class Model(object):
       input_reward = tf.placeholder(tf.float32, shape=(None,))
       input_done = tf.placeholder(tf.bool, shape=(None,))
       input_next_observation = tf.placeholder(tf.float32, shape=(None,) + self.observation_shape)
+      input_weight = tf.placeholder(tf.float32, shape=(None,))
       q_value = self.CriticNetwork(input_action, input_observation, parameters_critic, name='critic')
 
       with tf.variable_scope('critic_loss'):
@@ -97,7 +98,7 @@ class Model(object):
             tf.select(input_done, input_reward, input_reward + _DISCOUNT_FACTOR * q_value_target))
         # Training critic.
         td_error = q_value - q_value_target
-        loss = tf.reduce_mean(tf.square(td_error), 0)  # Minimize TD-error.
+        loss = tf.reduce_sum(input_weight * tf.square(td_error), 0)  # Minimize weighted TD-error.
         loss += tf.add_n([_L2_WEIGHT_DECAY * tf.nn.l2_loss(p) for p in parameters_critic])  # Ignore bias?
         optimizer = tf.train.AdamOptimizer(learning_rate=_LEARNING_RATE_CRITIC)
         gradients = optimizer.compute_gradients(loss, var_list=parameters_critic)
@@ -112,8 +113,8 @@ class Model(object):
         self._NoisyAct = WrapComputationalGraph(input_observation, noisy_action)
         self._Act = WrapComputationalGraph(input_observation, action)
         self.Train = WrapComputationalGraph(
-            [input_action, input_observation, input_reward, input_done, input_next_observation],
-            [train_actor, train_critic])
+            [input_action, input_observation, input_reward, input_done, input_next_observation, input_weight],
+            [train_actor, train_critic, td_error], return_only=2)
 
   def Act(self, observation, add_noise=False):
     observation = np.expand_dims(observation, axis=0)
@@ -216,16 +217,23 @@ class Model(object):
 
 
 class WrapComputationalGraph(object):
-  def __init__(self, inputs, outputs, session=None):
+  def __init__(self, inputs, outputs, return_only=None, session=None):
     self._inputs = inputs if isinstance(inputs, list) else [inputs]
-    self._outputs = outputs
+    self._outputs = outputs if isinstance(outputs, list) else [outputs]
+    assert self._outputs
     self._session = session or tf.get_default_session()
+    self._return_only = return_only or range(len(self._outputs))
+    self._return_only = self._return_only if isinstance(self._return_only, list) else [self._return_only]
 
   def __call__(self, *args):
     feed_dict = {}
     for (argpos, arg) in enumerate(args):
       feed_dict[self._inputs[argpos]] = arg
-    return self._session.run(self._outputs, feed_dict)
+    outputs = self._session.run(self._outputs, feed_dict)
+    final_outputs = []
+    for i in self._return_only:
+      final_outputs.append(outputs[i])
+    return final_outputs if len(final_outputs) > 1 else final_outputs[0]
 
 
 def ExponentialMovingAverage(tensors, decay=0.99, name='moving_average'):

@@ -6,7 +6,7 @@ import model
 import replay_memory
 
 
-_REPLAY_MEMORY_SIZE = 1e6
+_REPLAY_MEMORY_SIZE = int(1e6)
 _BATCH_SIZE = 64
 _WARMUP_TIMESTEPS = _BATCH_SIZE * 10
 
@@ -29,7 +29,8 @@ class Agent(object):
       self.action_space_shape = action_space.shape
       self.continuous_actions = True
     observation_space_shape = observation_space.shape
-    self.replay_memory = replay_memory.ReplayMemory(_REPLAY_MEMORY_SIZE, self.action_space_shape, observation_space_shape)
+    # self.replay_memory = replay_memory.Uniform(_REPLAY_MEMORY_SIZE, self.action_space_shape, observation_space_shape)
+    self.replay_memory = replay_memory.RankBased(_REPLAY_MEMORY_SIZE, self.action_space_shape, observation_space_shape)
     LOG.info('Initialized agent with actions %s and observations %s',
              str(self.action_space_shape), str(observation_space_shape))
     # Tensorflow model.
@@ -55,7 +56,8 @@ class Agent(object):
     self.replay_memory.Add(self.action, self.observation, reward, done, next_observation)
     if len(self.replay_memory) >= _WARMUP_TIMESTEPS:
       batch = self.replay_memory.Sample(_BATCH_SIZE)
-      self.model.Train(*batch)
+      td_error = self.model.Train(*batch)
+      self.replay_memory.Update(np.abs(td_error))
 
   def Save(self, checkpoint_index):
     filename = self.model.Save(step=checkpoint_index)

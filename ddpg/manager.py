@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import glob
 import logging
 import numpy as np
 import os
@@ -9,6 +10,13 @@ import tensorflow as tf
 LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
 
+try:
+  import moviepy.editor
+  has_moviepy = True
+except ImportError:
+  LOG.warn('MoviePy not found. Install with "pip install moviepy"')
+  has_moviepy = False
+
 
 class Manager(object):
 
@@ -16,7 +24,8 @@ class Manager(object):
     self.environment = environment
     self.agent = agent
     self.options = options
-    environment.monitor.start(os.path.join(options.output_directory, 'monitor'),
+    self.monitoring_path = os.path.join(options.output_directory, 'monitor')
+    environment.monitor.start(self.monitoring_path,
                               video_callable=lambda _: False, force=True)
     # Log performance.
     self.test_writer = tf.train.SummaryWriter(os.path.join(options.output_directory, 'test'))
@@ -47,9 +56,26 @@ class Manager(object):
       self.test_writer.add_summary(summary, timestep)
     # Verbose output.
     LOG.info(u'%d-episode %s average reward (after %d timesteps): %.2f ± %.2f',
-             self.environment.spec.trials, 'training' if is_training else 'evaluation',
+             len(values), 'training' if is_training else 'evaluation',
              timestep, mean_value, std_value)
     return mean_value
+
+  def WriteMovieSummary(self, timestep):
+    if not has_moviepy:
+      return
+    # Get latest movie.
+    movie_filename = max(glob.iglob(os.path.join(self.monitoring_path, 'openaigym.video.*.mp4')),
+                         key=os.path.getctime)
+    gif_filename = os.path.splitext(movie_filename)[0] + '.gif'
+    clip = moviepy.editor.VideoFileClip(movie_filename)
+    clip.write_gif(gif_filename)
+    with open(gif_filename) as fp:
+      gif_content = fp.read()
+    summary = tf.Summary(value=[
+        tf.Summary.Value(tag='Movie', image=tf.Summary.Image(
+            height=clip.h, width=clip.w, encoded_image_string=gif_content)),
+    ])
+    self.test_writer.add_summary(summary, timestep)
 
   def Run(self):
     num_training_timesteps = 0
@@ -59,6 +85,7 @@ class Manager(object):
       for i in range(self.environment.spec.trials):
         rewards.append(self.RunEpisode(is_training=False, record_video=i == 0)[0])
       average_reward = self.WriteResultSummary(num_training_timesteps, rewards, is_training=False)
+      self.WriteMovieSummary(num_training_timesteps)
       if self.environment.spec.reward_threshold and average_reward > self.environment.spec.reward_threshold:
         LOG.info('Surpassing reward threshold of %.2f. Stopping...', self.environment.spec.reward_threshold)
         break
@@ -72,10 +99,13 @@ class Manager(object):
         rewards.append(r)
         training_timesteps += t
         num_episodes += 1
+        # Break if we go over timestep limit.
+        if num_training_timesteps + training_timesteps >= self.options.max_timesteps:
+          break
       num_training_timesteps += training_timesteps
       self.WriteResultSummary(num_training_timesteps, rewards, is_training=True)
       self.agent.Save(num_training_timesteps)
-    LOG.info('To visualize results: tensorboard --logdir="%s"' % self.output_directory)
+    LOG.info('To visualize results: tensorboard --logdir="%s"' % self.options.output_directory)
 
   def RunEpisode(self, is_training=False, record_video=False, show=False):
     self.environment.monitor.configure(lambda _: record_video)
