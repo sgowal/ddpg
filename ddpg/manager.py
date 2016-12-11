@@ -18,6 +18,11 @@ except ImportError:
   has_moviepy = False
 
 
+# Summary tags.
+AVERAGE_REWARD_TAG = 'Average reward'
+STDDEV_REWARD_TAG = 'Standard deviation of reward'
+
+
 class Manager(object):
 
   def __init__(self, environment, agent, output_directory, options):
@@ -45,11 +50,11 @@ class Manager(object):
     std_value = np.std(values)
     hist, bin_edges = np.histogram(values, bins=10)
     summary = tf.Summary(value=[
-        tf.Summary.Value(tag="Rewards", histo=tf.HistogramProto(
+        tf.Summary.Value(tag='Rewards', histo=tf.HistogramProto(
             min=min_value, max=max_value, sum=sum_value, sum_squares=sum_squares_value,
             bucket_limit=bin_edges[1:], bucket=hist)),
-        tf.Summary.Value(tag='Average reward', simple_value=mean_value),
-        tf.Summary.Value(tag='Standard deviation of reward', simple_value=std_value),
+        tf.Summary.Value(tag=AVERAGE_REWARD_TAG, simple_value=mean_value),
+        tf.Summary.Value(tag=STDDEV_REWARD_TAG, simple_value=std_value),
     ])
     if is_training:
       self.train_writer.add_summary(summary, timestep)
