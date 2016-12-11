@@ -14,4 +14,33 @@ protoc -I=protos --python_out=ddpg protos/options.proto
 
 ## Usage
 
-...
+```bash
+# To list all environments.
+python run.py --list
+
+# To search an environment.
+python run.py --search CartPole.*
+
+# To run with default options.
+python run.py \
+  --output_directory path/to/some/experiment \
+  --environment=CartPole-v0
+
+# To specify some options.
+python run.py \
+  --output_directory path/to/some/experiment \
+  --environment=CartPole-v0
+  --options="evaluate_after_timesteps: 2000 device: '/gpu:0'"
+
+# Restore from a previously stored checkpoint.
+python run.py \
+  --output_directory path/to/some/previously/run/experiment \
+  --environment=CartPole-v0
+  --restore
+```
+
+Feel free to run tensorboard while training:
+
+```bash
+tensorboard --logdir=path/to/some/experiment
+```

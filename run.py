@@ -4,7 +4,10 @@ from __future__ import print_function
 
 import google.protobuf.text_format
 import gym
-import gym_private
+try:
+  import gym_private
+except ImportError:
+  pass
 import os
 import shutil
 import sys
