@@ -20,16 +20,17 @@ except ImportError:
 
 class Manager(object):
 
-  def __init__(self, environment, agent, options):
+  def __init__(self, environment, agent, output_directory, options):
     self.environment = environment
     self.agent = agent
+    self.output_directory = output_directory
     self.options = options
-    self.monitoring_path = os.path.join(options.output_directory, 'monitor')
+    self.monitoring_path = os.path.join(output_directory, 'monitor')
     environment.monitor.start(self.monitoring_path,
                               video_callable=lambda _: False, force=True)
     # Log performance.
-    self.test_writer = tf.train.SummaryWriter(os.path.join(options.output_directory, 'test'))
-    self.train_writer = tf.train.SummaryWriter(os.path.join(options.output_directory, 'train'))
+    self.test_writer = tf.train.SummaryWriter(os.path.join(output_directory, 'test'))
+    self.train_writer = tf.train.SummaryWriter(os.path.join(output_directory, 'train'))
 
   def __del__(self):
     self.environment.monitor.close()
@@ -105,7 +106,7 @@ class Manager(object):
       num_training_timesteps += training_timesteps
       self.WriteResultSummary(num_training_timesteps, rewards, is_training=True)
       self.agent.Save(num_training_timesteps)
-    LOG.info('To visualize results: tensorboard --logdir="%s"' % self.options.output_directory)
+    LOG.info('To visualize results: tensorboard --logdir="%s"' % self.output_directory)
 
   def RunEpisode(self, is_training=False, record_video=False, show=False):
     self.environment.monitor.configure(lambda _: record_video)
@@ -127,6 +128,6 @@ class Manager(object):
     return total_reward, timesteps
 
 
-def Start(environment, agent, options):
-  manager = Manager(environment, agent, options)
+def Start(environment, agent, output_directory, options):
+  manager = Manager(environment, agent, output_directory, options)
   manager.Run()

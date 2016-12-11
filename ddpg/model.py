@@ -22,13 +22,13 @@ LOG.setLevel(logging.INFO)
 
 class Model(object):
 
-  def __init__(self, action_shape, observation_shape, checkpoint_directory, restore=False,
-               device='/cpu:0'):
+  def __init__(self, action_shape, observation_shape, checkpoint_directory, options, restore=False):
     self.session = tf.Session()
     self.action_shape = action_shape
     self.observation_shape = observation_shape
     # Create networks.
-    self.Create(device)
+    self.options = options
+    self.Create()
     # Create saver.
     self.saver = tf.train.Saver(max_to_keep=1)
     self.checkpoint_directory = checkpoint_directory
@@ -47,11 +47,11 @@ class Model(object):
   def Save(self, step):
     return self.saver.save(self.session, os.path.join(self.checkpoint_directory, 'model.ckpt'), global_step=step)
 
-  def Create(self, device='/cpu:0'):
+  def Create(self):
     # Contains all operations to reset the networks when an episode starts.
     self.reset_ops = []
 
-    with tf.device(device):
+    with tf.device(self.options.device):
       # Create parameters (both for the regular and target networks).
       parameters_actor = self.ActorNetworkParameters(name='actor_parameters')
       parameters_critic = self.CriticNetworkParameters(name='critic_parameters')

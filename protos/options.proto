@@ -1,0 +1,12 @@
+package ddpg;
+
+message Options {
+  // Manager options.
+  optional int32 max_timesteps_per_episode = 1 [default = 10000];
+  optional int32 evaluate_after_timesteps = 2 [default = 10000];
+  optional int32 max_timesteps = 3 [default = 1000000];
+
+  // Agent options.
+  optional string device = 4 [default = "/cpu:0"];
+
+}

@@ -2,6 +2,7 @@
 
 from __future__ import print_function
 
+import google.protobuf.text_format
 import gym
 import gym_private
 import os
@@ -23,15 +24,12 @@ flags = tf.app.flags
 flags.DEFINE_string('environment', None, 'Gym environment.')
 flags.DEFINE_string('search', None, 'Lists all Gym environments that correspond to the input regular expression.')
 flags.DEFINE_string('output_directory', None, 'Directory where results are stored.')
-flags.DEFINE_string('device', '/cpu:0', 'Device on which to run TensorFlow.')
 flags.DEFINE_bool('list', False, 'Shows list of Gym environments.')
 flags.DEFINE_bool('force', False, 'Overwrite --output_directory if it already exists.')
 flags.DEFINE_bool('restore', False, 'Restore from a previous Run.')
 
-# Flags for general options.
-flags.DEFINE_integer('max_timesteps_per_episode', 10000, 'Maximum number of timesteps per episode.')
-flags.DEFINE_integer('evaluate_after_timesteps', 10000, 'Number of training timesteps between evaluations.')
-flags.DEFINE_integer('max_timesteps', 1000000, 'Maximum number of training timesteps.')
+# Flags for training options.
+flags.DEFINE_string('options', None, 'ddpg.Options protocol buffer in ASCII format.')
 FLAGS = flags.FLAGS
 
 
@@ -69,15 +67,20 @@ def Run():
     if not CreateDirectory(checkpoint_directory):
       return
 
+  # Read options.
+  options = ddpg.Options()
+  if FLAGS.options:
+    google.protobuf.text_format.Merge(FLAGS.options, options)
+    print(options)
+
   # Create environment.
   environment = gym.make(FLAGS.environment)
   # Create Agent that will interact with the environment.
   agent = ddpg.Agent(environment.action_space, environment.observation_space,
                      checkpoint_directory=checkpoint_directory,
-                     device=FLAGS.device, restore=FLAGS.restore)
+                     options=options, restore=FLAGS.restore)
   # Start experiment.
-  options = ddpg.ParseFlags(FLAGS)
-  ddpg.Start(environment, agent, options)
+  ddpg.Start(environment, agent, FLAGS.output_directory, options=options)
 
 
 if __name__ == '__main__':
