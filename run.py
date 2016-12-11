@@ -5,7 +5,7 @@ from __future__ import print_function
 import google.protobuf.text_format
 import gym
 try:
-  import gym_private
+  import gym_extras  # Personal Gym environments. Feel free to ignore.
 except ImportError:
   pass
 import os

@@ -74,6 +74,8 @@ class Manager(object):
                          key=os.path.getctime)
     gif_filename = os.path.splitext(movie_filename)[0] + '.gif'
     clip = moviepy.editor.VideoFileClip(movie_filename)
+    clip = clip.subclip(0, min(10, clip.end))  # Only make 10s GIF.
+    clip = clip.resize(width=min(clip.w, 640))  # Resize to max-width 640.
     clip.write_gif(gif_filename)
     with open(gif_filename) as fp:
       gif_content = fp.read()

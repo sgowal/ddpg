@@ -9,6 +9,7 @@ import replay_memory
 _REPLAY_MEMORY_SIZE = int(1e6)
 _BATCH_SIZE = 64
 _WARMUP_TIMESTEPS = _BATCH_SIZE * 10
+_USE_RANK_BASED_REPLAY = True
 
 # Logging.
 LOG = logging.getLogger(__name__)
@@ -29,8 +30,10 @@ class Agent(object):
       self.action_space_shape = action_space.shape
       self.continuous_actions = True
     observation_space_shape = observation_space.shape
-    # self.replay_memory = replay_memory.Uniform(_REPLAY_MEMORY_SIZE, self.action_space_shape, observation_space_shape)
-    self.replay_memory = replay_memory.RankBased(_REPLAY_MEMORY_SIZE, self.action_space_shape, observation_space_shape)
+    if _USE_RANK_BASED_REPLAY:
+      self.replay_memory = replay_memory.RankBased(_REPLAY_MEMORY_SIZE, self.action_space_shape, observation_space_shape)
+    else:
+      self.replay_memory = replay_memory.Uniform(_REPLAY_MEMORY_SIZE, self.action_space_shape, observation_space_shape)
     LOG.info('Initialized agent with actions %s and observations %s',
              str(self.action_space_shape), str(observation_space_shape))
     # Tensorflow model.
