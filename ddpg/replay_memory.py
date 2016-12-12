@@ -57,6 +57,7 @@ _BETA_START = 0.5  # Importance-sampling (begin of experiment).
 _BETA_END = 1.0    # Importance-sampling (end of experiment).
 _STEPS_TO_REACH_MAX_BETA = 100000  # Beta saturates after this amount of steps.
 _EPSILON = 1e-10
+_RECOMPUTE_IF = 1.1  # Allow up to 10% size mismatch before re-computing distributions.
 # When using rank-based priority, it might be good to reduce the learning rate (e.g., by 4).
 
 
@@ -68,6 +69,10 @@ class RankBased(ReplayMemory):
     self.start_step = None
     self.current_step = 0
     self.computed_density_for = None
+    # Only need to compute these once.
+    rank = np.arange(1, max_capacity + 1)
+    self.unnormalized_precomputed_priorities = np.power(rank, -_ALPHA)
+    self.unnormalized_precomputed_cdf = np.cumsum(self.unnormalized_precomputed_priorities)
 
   def Add(self, *args):
     # The new elements is placed at index self.current_index in the sliding window.
@@ -100,35 +105,33 @@ class RankBased(ReplayMemory):
 
   def _BuildCumulativeDensity(self, n, k):
     # Memorize the previous size for which it was computed.
-    if self.computed_density_for == (n, k):
-      return
+    if self.computed_density_for is not None:
+      previous_n, previous_k = self.computed_density_for
+      assert previous_n <= n, 'Replay memory is shrinking. Ooops.'
+      assert previous_k == k, 'Variable batch sizes not supported.'
+      if previous_n == n:
+        return
+      if float(previous_n) * _RECOMPUTE_IF > n and n != self.max_capacity:
+        # Do not recompute. Simply alter the last segment.
+        last_segment = self.distribution_segments[-1]
+        self.distribution_segments[-1] = (last_segment[0], n)
+        return
     self.computed_density_for = (n, k)
-    rank = np.arange(1, n + 1)
-    self.unnormalized_precomputed_priorities = np.power(rank, -_ALPHA)
-    # Build k segments (usually k == batch size).
-    cdf = np.cumsum(self.unnormalized_precomputed_priorities)
-    cdf /= cdf[-1]
     # Cut cdf in k segments.
-    next_limit = 1. / k
+    step_size = self.unnormalized_precomputed_cdf[n - 1] / float(k)
+    next_limit = step_size
     current_index = 0
     previous_segment_end = 0
     segments = []
     for current_segment in range(k):
-      while current_index < len(cdf) and cdf[current_index] < next_limit:
+      # Make sure there are enough indices left.
+      segments_left = k - current_segment
+      while (current_index < n - segments_left and
+             self.unnormalized_precomputed_cdf[current_index] < next_limit):
         current_index += 1
       assert previous_segment_end <= current_index
       current_index += 1
       segments.append((previous_segment_end, current_index))
       previous_segment_end = current_index
-      next_limit += 1. / k
-      # Make sure there are enough indices left.
-      segments_left = k - current_segment - 1
-      indices_left = len(cdf) - current_index
-      assert segments_left <= indices_left
-      if segments_left == indices_left:
-        # Assign all remaining segments.
-        for _ in range(segments_left):
-          segments.append((current_index, current_index + 1))
-          current_index += 1
-        break
+      next_limit += step_size
     self.distribution_segments = segments
