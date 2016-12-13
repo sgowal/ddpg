@@ -30,13 +30,13 @@ python run.py \
 # To specify some options.
 python run.py \
   --output_directory path/to/some/experiment \
-  --environment=CartPole-v0
+  --environment=CartPole-v0 \
   --options="evaluate_after_timesteps: 2000 device: '/gpu:0'"
 
 # Restore from a previously stored checkpoint.
 python run.py \
   --output_directory path/to/some/previously/run/experiment \
-  --environment=CartPole-v0
+  --environment=CartPole-v0 \
   --restore
 ```
 
