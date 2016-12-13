@@ -14,6 +14,7 @@ _DISCOUNT_FACTOR = .99
 _EXPLORATION_NOISE_THETA = 0.15  # Ornstein-Uhlenbeck process.
 _EXPLORATION_NOISE_SIGMA = 0.2
 _TAU = 1e-3  # Leaky-integrator for parameters.
+_USE_BATCH_NORMALIZATION = False
 
 # Logging.
 LOG = logging.getLogger(__name__)
@@ -60,17 +61,18 @@ class Model(object):
       parameters_target_critic, update_target_critic = ExponentialMovingAverage(
           parameters_critic, 1. - _TAU, name='target_critic_parameters')
 
-      # Actor network.
-      input_observation = tf.placeholder(tf.float32, shape=(None,) + self.observation_shape)
-      action = self.ActorNetwork(input_observation, parameters_actor, name='actor')
-
+      # Non-trainable actor network.
+      single_input_observation = tf.placeholder(tf.float32, shape=(1,) + self.observation_shape)
+      single_action = self.ActorNetwork(single_input_observation, parameters_actor, name='single_actor')
       # Add exploration (using Ornstein-Uhlenbeck process) - only used when a single action is given.
       action_noise, reset_op = OrnsteinUhlenbeckProcess(
           (1,) + self.action_shape, _EXPLORATION_NOISE_THETA, _EXPLORATION_NOISE_SIGMA)
       self.reset_ops.append(reset_op)
-      noisy_action = action + action_noise
+      noisy_action = single_action + action_noise
 
       # Training actor.
+      input_observation = tf.placeholder(tf.float32, shape=(None,) + self.observation_shape)
+      action = self.ActorNetwork(input_observation, parameters_actor, is_training=True, name='actor')
       with tf.variable_scope('actor_loss'):
         q_value = self.CriticNetwork(action, input_observation, parameters_critic, name='fixed_critic')
         loss = -tf.reduce_mean(q_value, 0)  # Maximize Q-value.
@@ -110,8 +112,8 @@ class Model(object):
       # Create relevant functions.
       with self.session.as_default():
         self.Reset = WrapComputationalGraph([], self.reset_ops)
-        self._NoisyAct = WrapComputationalGraph(input_observation, noisy_action)
-        self._Act = WrapComputationalGraph(input_observation, action)
+        self._NoisyAct = WrapComputationalGraph(single_input_observation, noisy_action)
+        self._Act = WrapComputationalGraph(single_input_observation, single_action)
         self.Train = WrapComputationalGraph(
             [input_action, input_observation, input_reward, input_done, input_next_observation, input_weight],
             [train_actor, train_critic, td_error], return_only=2)
@@ -134,6 +136,8 @@ class Model(object):
           w = tf.get_variable('w', (previous_size, layer_size), initializer=initializer)
           b = tf.get_variable('b', (layer_size,), initializer=initializer)
           params.extend((w, b))
+          if _USE_BATCH_NORMALIZATION:
+            params.extend(BatchNormalizationParameters((layer_size,), scale=False))
           previous_size = layer_size
       # Output action.
       with tf.variable_scope('output'):
@@ -144,7 +148,7 @@ class Model(object):
         params.extend((w, b))
         return params
 
-  def ActorNetwork(self, input_observation, params, name='actor'):
+  def ActorNetwork(self, input_observation, params, is_training=False, name='actor'):
     index = 0
     with tf.variable_scope(name):
       # Input is flattened.
@@ -156,7 +160,12 @@ class Model(object):
           w = params[index]
           b = params[index + 1]
           index += 2
-          previous_input = tf.nn.relu(tf.nn.xw_plus_b(previous_input, w, b))
+          previous_input = tf.nn.xw_plus_b(previous_input, w, b)
+          if _USE_BATCH_NORMALIZATION:
+            bn = params[index: index + 4]
+            index += 4
+            previous_input = BatchNormalization(previous_input, bn, is_training=is_training)
+          previous_input = tf.nn.relu(previous_input)
       # Output action.
       with tf.variable_scope('output'):
         w = params[index]
@@ -237,15 +246,43 @@ class WrapComputationalGraph(object):
 
 
 def ExponentialMovingAverage(tensors, decay=0.99, name='moving_average'):
-  average = tf.train.ExponentialMovingAverage(decay=decay, name=name)
-  op = average.apply(tensors)
-  output_tensors = [average.average(x) for x in tensors]
+  ema = tf.train.ExponentialMovingAverage(decay=decay, name=name)
+  op = ema.apply(tensors)
+  output_tensors = [ema.average(x) for x in tensors]
   return output_tensors, op
 
 
 def OrnsteinUhlenbeckProcess(shape, theta, sigma):
   with tf.variable_scope('output'):
     initial_noise = tf.zeros(shape)
-    noise = tf.get_variable('noise', shape, initializer=tf.constant_initializer(0.))
+    noise = tf.get_variable('noise', shape, initializer=tf.constant_initializer(0.), trainable=False)
     reset_op = noise.assign(initial_noise)
     return noise.assign_sub(theta * noise - tf.random_normal(shape, stddev=sigma)), reset_op
+
+
+# We define our own batch normalization layer so it is easier to construct it from parameters.
+def BatchNormalizationParameters(shape, center=True, scale=True, name=None):
+  with tf.variable_scope(name or 'bn'):
+    beta = tf.get_variable('beta', shape, initializer=tf.constant_initializer(0.), trainable=center)
+    scale = tf.get_variable('gamma', shape, initializer=tf.constant_initializer(1.), trainable=scale)
+    # Moving averages are stored in these variables.
+    average_mean = tf.get_variable('mean', shape, initializer=tf.constant_initializer(0.), trainable=False)
+    average_var = tf.get_variable('var', shape, initializer=tf.constant_initializer(0.), trainable=False)
+  return [beta, scale, average_mean, average_var]
+
+
+def BatchNormalization(input_tensor, params, decay=0.999, epsilon=1e-3, is_training=False, name=None):
+  with tf.variable_scope('bn'):
+    beta, gamma, average_mean, average_var = params
+    if is_training:
+      # Create moving average and store in average_mean and average_var.
+      ops = []
+      batch_mean, batch_var = tf.nn.moments(input_tensor, [0], name='moments')
+      ops.append(average_mean.assign_sub((1. - decay) * (average_mean - batch_mean)))
+      ops.append(average_var.assign_sub((1. - decay) * (average_var - batch_var)))
+      with tf.control_dependencies(ops):
+        mean, var = tf.identity(batch_mean), tf.identity(batch_var)
+    else:
+      mean, var = average_mean, average_var
+    output_tensor = tf.nn.batch_normalization(input_tensor, mean, var, beta, gamma, epsilon)
+  return output_tensor
