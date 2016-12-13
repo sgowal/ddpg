@@ -73,17 +73,20 @@ class Manager(object):
     movie_filename = max(glob.iglob(os.path.join(self.monitoring_path, 'openaigym.video.*.mp4')),
                          key=os.path.getctime)
     gif_filename = os.path.splitext(movie_filename)[0] + '.gif'
-    clip = moviepy.editor.VideoFileClip(movie_filename)
-    clip = clip.subclip(0, min(10, clip.end))  # Only make 10s GIF.
-    clip = clip.resize(width=min(clip.w, 640))  # Resize to max-width 640.
-    clip.write_gif(gif_filename)
-    with open(gif_filename) as fp:
-      gif_content = fp.read()
-    summary = tf.Summary(value=[
-        tf.Summary.Value(tag='Movie', image=tf.Summary.Image(
-            height=clip.h, width=clip.w, encoded_image_string=gif_content)),
-    ])
-    self.test_writer.add_summary(summary, timestep)
+    try:
+      clip = moviepy.editor.VideoFileClip(movie_filename)
+      clip = clip.subclip(0, min(10, clip.end))  # Only make 10s GIF.
+      clip = clip.resize(width=min(clip.w, 640))  # Resize to max-width 640.
+      clip.write_gif(gif_filename)
+      with open(gif_filename) as fp:
+        gif_content = fp.read()
+      summary = tf.Summary(value=[
+          tf.Summary.Value(tag='Movie', image=tf.Summary.Image(
+              height=clip.h, width=clip.w, encoded_image_string=gif_content)),
+      ])
+      self.test_writer.add_summary(summary, timestep)
+    except ValueError:
+      LOG.warn('Could not convert movie to gif for Tensorboard.')
 
   def Run(self):
     num_training_timesteps = 0

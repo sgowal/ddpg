@@ -14,7 +14,7 @@ _DISCOUNT_FACTOR = .99
 _EXPLORATION_NOISE_THETA = 0.15  # Ornstein-Uhlenbeck process.
 _EXPLORATION_NOISE_SIGMA = 0.2
 _TAU = 1e-3  # Leaky-integrator for parameters.
-_USE_BATCH_NORMALIZATION = False
+_USE_BATCH_NORMALIZATION = True
 
 # Logging.
 LOG = logging.getLogger(__name__)

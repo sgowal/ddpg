@@ -13,6 +13,12 @@ import shutil
 import sys
 import re
 
+# Unfortunate rendering issue.
+# Rendering before importing tensorflow solves the issue.
+env = gym.make('CartPole-v0')
+env.render()  # :(
+del env
+
 # Unfortunate pbr bug :(
 try:
   import tensorflow as tf
