@@ -8,7 +8,8 @@ Install [Gym](https://github.com/openai/gym#installation), [TensorFlow](https://
 
 ```bash
 pip install protobuf  # To install protobuf
-brew install protobuf  # To install protoc
+brew install protobuf  # To install protoc on MacOS
+sudo apt-get install protobuf-compiler  # To install protoc on Ubuntu
 protoc -I=protos --python_out=ddpg protos/options.proto
 ```
 
