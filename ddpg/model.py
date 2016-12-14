@@ -10,18 +10,13 @@ _LEARNING_RATE_ACTOR = 1e-4
 _LEARNING_RATE_CRITIC = 1e-3
 _L2_WEIGHT_DECAY = 1e-2  # Only for Q.
 _LAYERS = [400, 300]
-_LAST_LAYER_INIT = 3e-3  # Other layers are initialize with 1/sqrt(F)
+_LAST_LAYER_INIT = 3e-3  # Other layers are initialized with 1/sqrt(n).
 _DISCOUNT_FACTOR = .99
 _EXPLORATION_NOISE_THETA = 0.15  # Ornstein-Uhlenbeck process.
 _EXPLORATION_NOISE_SIGMA = 0.2
 _TAU = 1e-3  # Leaky-integrator for parameters.
 _USE_ACTOR_BATCH_NORMALIZATION = False
-_USE_CRITIC_BATCH_NORMALIZATION = True
-
-# To compensate for batch normalization on the critic.
-# The actor network tends to be more stable.
-if _USE_CRITIC_BATCH_NORMALIZATION:
-  _LEARNING_RATE_CRITIC = 1e-5
+_USE_CRITIC_BATCH_NORMALIZATION = True  # Turning this is on is not always a good thing.
 
 
 # Logging.
