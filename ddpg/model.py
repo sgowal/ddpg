@@ -10,13 +10,15 @@ _LEARNING_RATE_ACTOR = 1e-4
 _LEARNING_RATE_CRITIC = 1e-3
 _L2_WEIGHT_DECAY = 1e-2  # Only for Q.
 _LAYERS = [400, 300]
+_INSERT_ACTION_IN_CRITIC_AT_LAYER = 1
 _LAST_LAYER_INIT = 3e-3  # Other layers are initialized with 1/sqrt(n).
 _DISCOUNT_FACTOR = .99
 _EXPLORATION_NOISE_THETA = 0.15  # Ornstein-Uhlenbeck process.
 _EXPLORATION_NOISE_SIGMA = 0.2
 _TAU = 1e-3  # Leaky-integrator for parameters.
 _USE_ACTOR_BATCH_NORMALIZATION = True
-_USE_CRITIC_BATCH_NORMALIZATION = False  # Turning this is on is not always a good thing.
+_USE_CRITIC_BATCH_NORMALIZATION = True
+BATCH_NORMALIZATION_DECAY = 0.9999
 
 
 # Logging.
@@ -135,6 +137,8 @@ class Model(object):
     with tf.variable_scope(name):
       # Input is flattened.
       previous_size = reduce(operator.mul, self.observation_shape, 1)
+      if _USE_ACTOR_BATCH_NORMALIZATION:
+        params.extend(BatchNormalizationParameters((previous_size,), scale=False))
       # Layers.
       for i, layer_size in enumerate(_LAYERS):
         with tf.variable_scope('layer_%d' % i):
@@ -165,6 +169,10 @@ class Model(object):
       # Input is flattened.
       flat_input_observation = tf.contrib.layers.flatten(input_observation)
       previous_input = flat_input_observation
+      if _USE_ACTOR_BATCH_NORMALIZATION:
+        bn = params[index: index + 4]
+        index += 4
+        previous_input = BatchNormalization(previous_input, bn, is_training=is_training)
       # Layers.
       for i, layer_size in enumerate(_LAYERS):
         with tf.variable_scope('layer_%d' % i):
@@ -198,7 +206,7 @@ class Model(object):
       # Layers.
       for i, layer_size in enumerate(_LAYERS):
         with tf.variable_scope('layer_%d' % i):
-          if i == 1:
+          if i == _INSERT_ACTION_IN_CRITIC_AT_LAYER:
             # Input action in the second layer.
             previous_size += reduce(operator.mul, self.action_shape, 1)
           initializer = tf.random_uniform_initializer(minval=-1.0 / math.sqrt(previous_size),
@@ -207,7 +215,11 @@ class Model(object):
           b = tf.get_variable('b', (layer_size,), initializer=initializer)
           params.extend([Variable(w, regularize=True, copy_as_is=False),
                          Variable(b, regularize=True, copy_as_is=False)])
-          if _USE_CRITIC_BATCH_NORMALIZATION:
+          # Note that the original paper does not perform batch normalization on the input or
+          # on layers after the action is input. This also go in line with my personal
+          # observations that batch normalization in the critic network should be used
+          # sparsely.
+          if i < _INSERT_ACTION_IN_CRITIC_AT_LAYER and _USE_CRITIC_BATCH_NORMALIZATION:
             params.extend(BatchNormalizationParameters((layer_size,), scale=False))
           previous_size = layer_size
       # Output q-value.
@@ -237,7 +249,7 @@ class Model(object):
           b = params[index + 1].tensor
           index += 2
           previous_input = tf.nn.xw_plus_b(previous_input, w, b)
-          if _USE_CRITIC_BATCH_NORMALIZATION:
+          if i < _INSERT_ACTION_IN_CRITIC_AT_LAYER and _USE_CRITIC_BATCH_NORMALIZATION:
             bn = params[index: index + 4]
             index += 4
             previous_input = BatchNormalization(previous_input, bn, is_training=is_training)
@@ -305,7 +317,8 @@ def BatchNormalizationParameters(shape, center=True, scale=True, name=None):
           Variable(average_var, regularize=False, copy_as_is=True)]
 
 
-def BatchNormalization(input_tensor, params, decay=0.999, epsilon=1e-3, is_training=False, name=None):
+def BatchNormalization(input_tensor, params, decay=BATCH_NORMALIZATION_DECAY,
+                       epsilon=1e-3, is_training=False, name=None):
   with tf.variable_scope('bn'):
     beta, gamma, average_mean, average_var = params
     if is_training:
