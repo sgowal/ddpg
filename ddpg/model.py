@@ -15,8 +15,8 @@ _DISCOUNT_FACTOR = .99
 _EXPLORATION_NOISE_THETA = 0.15  # Ornstein-Uhlenbeck process.
 _EXPLORATION_NOISE_SIGMA = 0.2
 _TAU = 1e-3  # Leaky-integrator for parameters.
-_USE_ACTOR_BATCH_NORMALIZATION = False
-_USE_CRITIC_BATCH_NORMALIZATION = True  # Turning this is on is not always a good thing.
+_USE_ACTOR_BATCH_NORMALIZATION = True
+_USE_CRITIC_BATCH_NORMALIZATION = False  # Turning this is on is not always a good thing.
 
 
 # Logging.
@@ -25,7 +25,7 @@ LOG.setLevel(logging.INFO)
 
 
 # Simple namedtuple to create the different variables in the actor and critic network.
-Variable = collections.namedtuple('Variable', ['tensor', 'regularize', 'copy_to_target'])
+Variable = collections.namedtuple('Variable', ['tensor', 'regularize', 'copy_as_is'])
 
 
 class Model(object):
@@ -142,8 +142,8 @@ class Model(object):
                                                       maxval=1.0 / math.sqrt(previous_size))
           w = tf.get_variable('w', (previous_size, layer_size), initializer=initializer)
           b = tf.get_variable('b', (layer_size,), initializer=initializer)
-          params.extend([Variable(w, regularize=True, copy_to_target=False),
-                         Variable(b, regularize=True, copy_to_target=False)])
+          params.extend([Variable(w, regularize=True, copy_as_is=False),
+                         Variable(b, regularize=True, copy_as_is=False)])
           if _USE_ACTOR_BATCH_NORMALIZATION:
             params.extend(BatchNormalizationParameters((layer_size,), scale=False))
           previous_size = layer_size
@@ -153,8 +153,8 @@ class Model(object):
         initializer = tf.random_uniform_initializer(minval=-_LAST_LAYER_INIT, maxval=_LAST_LAYER_INIT)
         w = tf.get_variable('w', (previous_size, output_size), initializer=initializer)
         b = tf.get_variable('b', (output_size,), initializer=initializer)
-        params.extend((Variable(w, regularize=True, copy_to_target=False),
-                       Variable(b, regularize=True, copy_to_target=False)))
+        params.extend((Variable(w, regularize=True, copy_as_is=False),
+                       Variable(b, regularize=True, copy_as_is=False)))
         if _USE_ACTOR_BATCH_NORMALIZATION:
           params.extend(BatchNormalizationParameters((output_size,), scale=False))
         return params
@@ -205,8 +205,8 @@ class Model(object):
                                                       maxval=1.0 / math.sqrt(previous_size))
           w = tf.get_variable('w', (previous_size, layer_size), initializer=initializer)
           b = tf.get_variable('b', (layer_size,), initializer=initializer)
-          params.extend([Variable(w, regularize=True, copy_to_target=False),
-                         Variable(b, regularize=True, copy_to_target=False)])
+          params.extend([Variable(w, regularize=True, copy_as_is=False),
+                         Variable(b, regularize=True, copy_as_is=False)])
           if _USE_CRITIC_BATCH_NORMALIZATION:
             params.extend(BatchNormalizationParameters((layer_size,), scale=False))
           previous_size = layer_size
@@ -216,8 +216,8 @@ class Model(object):
         initializer = tf.random_uniform_initializer(minval=-_LAST_LAYER_INIT, maxval=_LAST_LAYER_INIT)
         w = tf.get_variable('w', (previous_size, output_size), initializer=initializer)
         b = tf.get_variable('b', (output_size,), initializer=initializer)
-        params.extend((Variable(w, regularize=True, copy_to_target=False),
-                       Variable(b, regularize=True, copy_to_target=False)))
+        params.extend((Variable(w, regularize=True, copy_as_is=False),
+                       Variable(b, regularize=True, copy_as_is=False)))
         return params
 
   def CriticNetwork(self, input_action, input_observation, params, is_training=False, name='critic'):
@@ -272,14 +272,14 @@ class WrapComputationalGraph(object):
 
 def PropagateToTargetNetwork(params, decay=0.99, name='moving_average'):
   ema = tf.train.ExponentialMovingAverage(decay=decay, name=name)
-  tensors_for_ema = [p.tensor for p in params if not p.copy_to_target]
+  tensors_for_ema = [p.tensor for p in params if not p.copy_as_is]
   op = ema.apply(tensors_for_ema)
   target_params = []
   for p in params:
-    if p.copy_to_target:
+    if p.copy_as_is:
       target_params.append(p)
     else:
-      target_params.append(Variable(ema.average(p.tensor), regularize=None, copy_to_target=None))
+      target_params.append(Variable(ema.average(p.tensor), regularize=None, copy_as_is=None))
   return target_params, op
 
 
@@ -299,10 +299,10 @@ def BatchNormalizationParameters(shape, center=True, scale=True, name=None):
     # Moving averages are stored in these variables.
     average_mean = tf.get_variable('mean', shape, initializer=tf.constant_initializer(0.), trainable=False)
     average_var = tf.get_variable('var', shape, initializer=tf.constant_initializer(1.), trainable=False)
-  return [Variable(beta, regularize=False, copy_to_target=False),
-          Variable(gamma, regularize=False, copy_to_target=False),
-          Variable(average_mean, regularize=False, copy_to_target=True),  # Make an exact copy.
-          Variable(average_var, regularize=False, copy_to_target=True)]
+  return [Variable(beta, regularize=False, copy_as_is=False),
+          Variable(gamma, regularize=False, copy_as_is=False),
+          Variable(average_mean, regularize=False, copy_as_is=True),  # Make an exact copy.
+          Variable(average_var, regularize=False, copy_as_is=True)]
 
 
 def BatchNormalization(input_tensor, params, decay=0.999, epsilon=1e-3, is_training=False, name=None):
