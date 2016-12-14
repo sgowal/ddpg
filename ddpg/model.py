@@ -15,8 +15,8 @@ _DISCOUNT_FACTOR = .99
 _EXPLORATION_NOISE_THETA = 0.15  # Ornstein-Uhlenbeck process.
 _EXPLORATION_NOISE_SIGMA = 0.2
 _TAU = 1e-3  # Leaky-integrator for parameters.
-_USE_ACTOR_BATCH_NORMALIZATION = True
-_USE_CRITIC_BATCH_NORMALIZATION = False
+_USE_ACTOR_BATCH_NORMALIZATION = False
+_USE_CRITIC_BATCH_NORMALIZATION = True
 
 # To compensate for batch normalization on the critic.
 # The actor network tends to be more stable.
@@ -296,7 +296,7 @@ def BatchNormalizationParameters(shape, center=True, scale=True, name=None):
     gamma = tf.get_variable('gamma', shape, initializer=tf.constant_initializer(1.), trainable=scale)
     # Moving averages are stored in these variables.
     average_mean = tf.get_variable('mean', shape, initializer=tf.constant_initializer(0.), trainable=False)
-    average_var = tf.get_variable('var', shape, initializer=tf.constant_initializer(0.), trainable=False)
+    average_var = tf.get_variable('var', shape, initializer=tf.constant_initializer(1.), trainable=False)
   return [Variable(beta, regularize=False, copy_to_target=False),
           Variable(gamma, regularize=False, copy_to_target=False),
           Variable(average_mean, regularize=False, copy_to_target=True),  # Make an exact copy.

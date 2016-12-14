@@ -8,7 +8,8 @@ Install [Gym](https://github.com/openai/gym#installation), [TensorFlow](https://
 
 ```bash
 pip install protobuf  # To install protobuf
-brew install protobuf  # To install protoc
+brew install protobuf  # To install protoc on MacOS
+sudo apt-get install protobuf-compiler  # To install protoc on Ubuntu
 protoc -I=protos --python_out=ddpg protos/options.proto
 ```
 
@@ -29,13 +30,13 @@ python run.py \
 # To specify some options.
 python run.py \
   --output_directory path/to/some/experiment \
-  --environment=CartPole-v0
+  --environment=CartPole-v0 \
   --options="evaluate_after_timesteps: 2000 device: '/gpu:0'"
 
 # Restore from a previously stored checkpoint.
 python run.py \
   --output_directory path/to/some/previously/run/experiment \
-  --environment=CartPole-v0
+  --environment=CartPole-v0 \
   --restore
 ```
 
