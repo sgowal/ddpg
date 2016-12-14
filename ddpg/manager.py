@@ -67,7 +67,7 @@ class Manager(object):
     return mean_value
 
   def WriteMovieSummary(self, timestep):
-    if not has_moviepy:
+    if not has_moviepy or self.options.disable_rendering:
       return
     # Get latest movie.
     movie_filename = max(glob.iglob(os.path.join(self.monitoring_path, 'openaigym.video.*.mp4')),
@@ -116,14 +116,14 @@ class Manager(object):
     LOG.info('To visualize results: tensorboard --logdir="%s"' % self.output_directory)
 
   def RunEpisode(self, is_training=False, record_video=False, show=False):
-    self.environment.monitor.configure(lambda _: record_video)
+    self.environment.monitor.configure(lambda _: record_video and not self.options.disable_rendering)
     total_reward = 0.
     timesteps = 0
     done = False
 
     observation = self.environment.reset()
     while not done:
-      if show:
+      if show and not self.options.disable_rendering:
         self.environment.render()
       self.agent.Observe(observation)
       action = self.agent.Act(is_training=is_training)

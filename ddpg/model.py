@@ -1,3 +1,4 @@
+import collections
 import logging
 import math
 import numpy as np
@@ -14,11 +15,22 @@ _DISCOUNT_FACTOR = .99
 _EXPLORATION_NOISE_THETA = 0.15  # Ornstein-Uhlenbeck process.
 _EXPLORATION_NOISE_SIGMA = 0.2
 _TAU = 1e-3  # Leaky-integrator for parameters.
-_USE_BATCH_NORMALIZATION = False
+_USE_ACTOR_BATCH_NORMALIZATION = True
+_USE_CRITIC_BATCH_NORMALIZATION = False
+
+# To compensate for batch normalization on the critic.
+# The actor network tends to be more stable.
+if _USE_CRITIC_BATCH_NORMALIZATION:
+  _LEARNING_RATE_CRITIC = 1e-4
+
 
 # Logging.
 LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
+
+
+# Simple namedtuple to create the different variables in the actor and critic network.
+Variable = collections.namedtuple('Variable', ['tensor', 'regularize', 'copy_to_target'])
 
 
 class Model(object):
@@ -56,9 +68,9 @@ class Model(object):
       # Create parameters (both for the regular and target networks).
       parameters_actor = self.ActorNetworkParameters(name='actor_parameters')
       parameters_critic = self.CriticNetworkParameters(name='critic_parameters')
-      parameters_target_actor, update_target_actor = ExponentialMovingAverage(
+      parameters_target_actor, update_target_actor = PropagateToTargetNetwork(
           parameters_actor, 1. - _TAU, name='target_actor_parameters')
-      parameters_target_critic, update_target_critic = ExponentialMovingAverage(
+      parameters_target_critic, update_target_critic = PropagateToTargetNetwork(
           parameters_critic, 1. - _TAU, name='target_critic_parameters')
 
       # Non-trainable actor network.
@@ -78,7 +90,7 @@ class Model(object):
         loss = -tf.reduce_mean(q_value, 0)  # Maximize Q-value.
         optimizer = tf.train.AdamOptimizer(learning_rate=_LEARNING_RATE_ACTOR)
         # Only update parameters of the actor network.
-        gradients = optimizer.compute_gradients(loss, var_list=parameters_actor)
+        gradients = optimizer.compute_gradients(loss, var_list=[p.tensor for p in parameters_actor])
         train_op = optimizer.apply_gradients(gradients)
         # Training the actor include propagating the learned parameters.
         with tf.control_dependencies([train_op]):
@@ -90,7 +102,7 @@ class Model(object):
       input_done = tf.placeholder(tf.bool, shape=(None,))
       input_next_observation = tf.placeholder(tf.float32, shape=(None,) + self.observation_shape)
       input_weight = tf.placeholder(tf.float32, shape=(None,))
-      q_value = self.CriticNetwork(input_action, input_observation, parameters_critic, name='critic')
+      q_value = self.CriticNetwork(input_action, input_observation, parameters_critic, is_training=True, name='critic')
 
       with tf.variable_scope('critic_loss'):
         q_value_target = self.CriticNetwork(
@@ -101,9 +113,9 @@ class Model(object):
         # Training critic.
         td_error = q_value - q_value_target
         loss = tf.reduce_sum(input_weight * tf.square(td_error), 0)  # Minimize weighted TD-error.
-        loss += tf.add_n([_L2_WEIGHT_DECAY * tf.nn.l2_loss(p) for p in parameters_critic])  # Ignore bias?
+        loss += tf.add_n([_L2_WEIGHT_DECAY * tf.nn.l2_loss(p.tensor) for p in parameters_critic if p.regularize])
         optimizer = tf.train.AdamOptimizer(learning_rate=_LEARNING_RATE_CRITIC)
-        gradients = optimizer.compute_gradients(loss, var_list=parameters_critic)
+        gradients = optimizer.compute_gradients(loss, var_list=[p.tensor for p in parameters_critic])
         train_op = optimizer.apply_gradients(gradients)
         # Training the critic include propagating the learned parameters.
         with tf.control_dependencies([train_op]):
@@ -135,8 +147,9 @@ class Model(object):
                                                       maxval=1.0 / math.sqrt(previous_size))
           w = tf.get_variable('w', (previous_size, layer_size), initializer=initializer)
           b = tf.get_variable('b', (layer_size,), initializer=initializer)
-          params.extend((w, b))
-          if _USE_BATCH_NORMALIZATION:
+          params.extend([Variable(w, regularize=True, copy_to_target=False),
+                         Variable(b, regularize=True, copy_to_target=False)])
+          if _USE_ACTOR_BATCH_NORMALIZATION:
             params.extend(BatchNormalizationParameters((layer_size,), scale=False))
           previous_size = layer_size
       # Output action.
@@ -145,7 +158,8 @@ class Model(object):
         initializer = tf.random_uniform_initializer(minval=-_LAST_LAYER_INIT, maxval=_LAST_LAYER_INIT)
         w = tf.get_variable('w', (previous_size, output_size), initializer=initializer)
         b = tf.get_variable('b', (output_size,), initializer=initializer)
-        params.extend((w, b))
+        params.extend((Variable(w, regularize=True, copy_to_target=False),
+                       Variable(b, regularize=True, copy_to_target=False)))
         return params
 
   def ActorNetwork(self, input_observation, params, is_training=False, name='actor'):
@@ -157,19 +171,19 @@ class Model(object):
       # Layers.
       for i, layer_size in enumerate(_LAYERS):
         with tf.variable_scope('layer_%d' % i):
-          w = params[index]
-          b = params[index + 1]
+          w = params[index].tensor
+          b = params[index + 1].tensor
           index += 2
           previous_input = tf.nn.xw_plus_b(previous_input, w, b)
-          if _USE_BATCH_NORMALIZATION:
+          if _USE_ACTOR_BATCH_NORMALIZATION:
             bn = params[index: index + 4]
             index += 4
             previous_input = BatchNormalization(previous_input, bn, is_training=is_training)
           previous_input = tf.nn.relu(previous_input)
       # Output action.
       with tf.variable_scope('output'):
-        w = params[index]
-        b = params[index + 1]
+        w = params[index].tensor
+        b = params[index + 1].tensor
         index += 2
         # TODO: Reshape to requested shape.
         return tf.nn.tanh(tf.nn.xw_plus_b(previous_input, w, b))
@@ -189,7 +203,10 @@ class Model(object):
                                                       maxval=1.0 / math.sqrt(previous_size))
           w = tf.get_variable('w', (previous_size, layer_size), initializer=initializer)
           b = tf.get_variable('b', (layer_size,), initializer=initializer)
-          params.extend((w, b))
+          params.extend([Variable(w, regularize=True, copy_to_target=False),
+                         Variable(b, regularize=True, copy_to_target=False)])
+          if _USE_CRITIC_BATCH_NORMALIZATION:
+            params.extend(BatchNormalizationParameters((layer_size,), scale=False))
           previous_size = layer_size
       # Output q-value.
       with tf.variable_scope('output'):
@@ -197,10 +214,11 @@ class Model(object):
         initializer = tf.random_uniform_initializer(minval=-_LAST_LAYER_INIT, maxval=_LAST_LAYER_INIT)
         w = tf.get_variable('w', (previous_size, output_size), initializer=initializer)
         b = tf.get_variable('b', (output_size,), initializer=initializer)
-        params.extend((w, b))
+        params.extend((Variable(w, regularize=True, copy_to_target=False),
+                       Variable(b, regularize=True, copy_to_target=False)))
         return params
 
-  def CriticNetwork(self, input_action, input_observation, params, name='critic'):
+  def CriticNetwork(self, input_action, input_observation, params, is_training=False, name='critic'):
     index = 0
     with tf.variable_scope(name):
       # Input is flattened.
@@ -213,14 +231,19 @@ class Model(object):
             # Input action in the second layer.
             flat_input_action = tf.contrib.layers.flatten(input_action)
             previous_input = tf.concat(1, [previous_input, flat_input_action])
-          w = params[index]
-          b = params[index + 1]
+          w = params[index].tensor
+          b = params[index + 1].tensor
           index += 2
-          previous_input = tf.nn.relu(tf.nn.xw_plus_b(previous_input, w, b))
+          previous_input = tf.nn.xw_plus_b(previous_input, w, b)
+          if _USE_CRITIC_BATCH_NORMALIZATION:
+            bn = params[index: index + 4]
+            index += 4
+            previous_input = BatchNormalization(previous_input, bn, is_training=is_training)
+          previous_input = tf.nn.relu(previous_input)
       # Output q-value.
       with tf.variable_scope('output'):
-        w = params[index]
-        b = params[index + 1]
+        w = params[index].tensor
+        b = params[index + 1].tensor
         index += 2
         return tf.squeeze(tf.nn.xw_plus_b(previous_input, w, b))
 
@@ -245,11 +268,17 @@ class WrapComputationalGraph(object):
     return final_outputs if len(final_outputs) > 1 else final_outputs[0]
 
 
-def ExponentialMovingAverage(tensors, decay=0.99, name='moving_average'):
+def PropagateToTargetNetwork(params, decay=0.99, name='moving_average'):
   ema = tf.train.ExponentialMovingAverage(decay=decay, name=name)
-  op = ema.apply(tensors)
-  output_tensors = [ema.average(x) for x in tensors]
-  return output_tensors, op
+  tensors_for_ema = [p.tensor for p in params if not p.copy_to_target]
+  op = ema.apply(tensors_for_ema)
+  target_params = []
+  for p in params:
+    if p.copy_to_target:
+      target_params.append(p)
+    else:
+      target_params.append(Variable(ema.average(p.tensor), regularize=None, copy_to_target=None))
+  return target_params, op
 
 
 def OrnsteinUhlenbeckProcess(shape, theta, sigma):
@@ -264,11 +293,14 @@ def OrnsteinUhlenbeckProcess(shape, theta, sigma):
 def BatchNormalizationParameters(shape, center=True, scale=True, name=None):
   with tf.variable_scope(name or 'bn'):
     beta = tf.get_variable('beta', shape, initializer=tf.constant_initializer(0.), trainable=center)
-    scale = tf.get_variable('gamma', shape, initializer=tf.constant_initializer(1.), trainable=scale)
+    gamma = tf.get_variable('gamma', shape, initializer=tf.constant_initializer(1.), trainable=scale)
     # Moving averages are stored in these variables.
     average_mean = tf.get_variable('mean', shape, initializer=tf.constant_initializer(0.), trainable=False)
     average_var = tf.get_variable('var', shape, initializer=tf.constant_initializer(0.), trainable=False)
-  return [beta, scale, average_mean, average_var]
+  return [Variable(beta, regularize=False, copy_to_target=False),
+          Variable(gamma, regularize=False, copy_to_target=False),
+          Variable(average_mean, regularize=False, copy_to_target=True),  # Make an exact copy.
+          Variable(average_var, regularize=False, copy_to_target=True)]
 
 
 def BatchNormalization(input_tensor, params, decay=0.999, epsilon=1e-3, is_training=False, name=None):
@@ -278,11 +310,11 @@ def BatchNormalization(input_tensor, params, decay=0.999, epsilon=1e-3, is_train
       # Create moving average and store in average_mean and average_var.
       ops = []
       batch_mean, batch_var = tf.nn.moments(input_tensor, [0], name='moments')
-      ops.append(average_mean.assign_sub((1. - decay) * (average_mean - batch_mean)))
-      ops.append(average_var.assign_sub((1. - decay) * (average_var - batch_var)))
+      ops.append(average_mean.tensor.assign_sub((1. - decay) * (average_mean.tensor - batch_mean)))
+      ops.append(average_var.tensor.assign_sub((1. - decay) * (average_var.tensor - batch_var)))
       with tf.control_dependencies(ops):
         mean, var = tf.identity(batch_mean), tf.identity(batch_var)
     else:
-      mean, var = average_mean, average_var
-    output_tensor = tf.nn.batch_normalization(input_tensor, mean, var, beta, gamma, epsilon)
+      mean, var = average_mean.tensor, average_var.tensor
+    output_tensor = tf.nn.batch_normalization(input_tensor, mean, var, beta.tensor, gamma.tensor, epsilon)
   return output_tensor
