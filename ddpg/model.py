@@ -21,7 +21,7 @@ _USE_CRITIC_BATCH_NORMALIZATION = True
 # To compensate for batch normalization on the critic.
 # The actor network tends to be more stable.
 if _USE_CRITIC_BATCH_NORMALIZATION:
-  _LEARNING_RATE_CRITIC = 1e-4
+  _LEARNING_RATE_CRITIC = 1e-5
 
 
 # Logging.
@@ -160,6 +160,8 @@ class Model(object):
         b = tf.get_variable('b', (output_size,), initializer=initializer)
         params.extend((Variable(w, regularize=True, copy_to_target=False),
                        Variable(b, regularize=True, copy_to_target=False)))
+        if _USE_ACTOR_BATCH_NORMALIZATION:
+          params.extend(BatchNormalizationParameters((output_size,), scale=False))
         return params
 
   def ActorNetwork(self, input_observation, params, is_training=False, name='actor'):
@@ -186,7 +188,12 @@ class Model(object):
         b = params[index + 1].tensor
         index += 2
         # TODO: Reshape to requested shape.
-        return tf.nn.tanh(tf.nn.xw_plus_b(previous_input, w, b))
+        previous_input = tf.nn.xw_plus_b(previous_input, w, b)
+        if _USE_ACTOR_BATCH_NORMALIZATION:
+          bn = params[index: index + 4]
+          index += 4
+          previous_input = BatchNormalization(previous_input, bn, is_training=is_training)
+        return tf.nn.tanh(previous_input)
 
   def CriticNetworkParameters(self, name='critic'):
     params = []
