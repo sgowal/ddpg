@@ -1,5 +1,8 @@
 Based on the following paper: ["Continuous control with deep reinforcement learning"](http://arxiv.org/abs/1509.02971) by T. P. Lillicrap et al.
 
+This implementation adds a little tweak to handle discrete action spaces and implements
+["Prioritized Experience Replay"](https://arxiv.org/abs/1511.05952) by T. Schaul et al.
+
 ## Installation
 
 Install [Gym](https://github.com/openai/gym#installation), [TensorFlow](https://www.tensorflow.org/get_started/os_setup.html), [MoviePy](http://zulko.github.io/moviepy/install.html) and [protobuf](https://github.com/google/protobuf/releases)
