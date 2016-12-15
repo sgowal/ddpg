@@ -45,3 +45,8 @@ Feel free to run tensorboard while training:
 ```bash
 tensorboard --logdir=path/to/some/experiment
 ```
+
+## Example of outputs
+
+![Performance](https://raw.githubusercontent.com/sgowal/ddpg/master/doc/performance.png)
+![CartPole-v0](https://raw.githubusercontent.com/sgowal/ddpg/master/doc/cartpole.gif)
