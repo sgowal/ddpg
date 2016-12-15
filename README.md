@@ -48,5 +48,5 @@ tensorboard --logdir=path/to/some/experiment
 
 ## Example of outputs
 
-![Performance](https://raw.githubusercontent.com/sgowal/ddpg/master/doc/performance.png)
-![CartPole-v0](https://raw.githubusercontent.com/sgowal/ddpg/master/doc/cartpole.gif)
+![Performance](https://github.com/sgowal/ddpg/raw/master/doc/performance.png)
+![CartPole-v0](https://github.com/sgowal/ddpg/raw/master/doc/cartpole.gif)
