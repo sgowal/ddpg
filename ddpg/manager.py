@@ -25,13 +25,14 @@ STDDEV_REWARD_TAG = 'Standard deviation of reward'
 
 class Manager(object):
 
-  def __init__(self, environment, agent, output_directory, options):
+  def __init__(self, environment, agent, output_directory, options, restore=False):
     self.environment = environment
     self.agent = agent
     self.output_directory = output_directory
     self.options = options
     self.monitoring_path = os.path.join(output_directory, 'monitor')
     environment.monitor.start(self.monitoring_path,
+                              resume=restore,
                               video_callable=lambda _: False, force=True)
     # Log performance.
     self.test_writer = tf.train.SummaryWriter(os.path.join(output_directory, 'test'))
@@ -120,7 +121,8 @@ class Manager(object):
     LOG.info('Or plot performance: python analyze_results.py --event_directory="%s"' % self.output_directory)
 
   def RunEpisode(self, is_training=False, record_video=False, show=False):
-    self.environment.monitor.configure(lambda _: record_video and not self.options.disable_rendering)
+    self.environment.monitor.configure(lambda _: record_video and not self.options.disable_rendering,
+                                       mode='training' if is_training else 'evaluation')
     total_reward = 0.
     timesteps = 0
     done = False
@@ -139,6 +141,6 @@ class Manager(object):
     return total_reward, timesteps
 
 
-def Start(environment, agent, output_directory, options):
-  manager = Manager(environment, agent, output_directory, options)
+def Start(environment, agent, output_directory, options, restore=False):
+  manager = Manager(environment, agent, output_directory, options, restore=restore)
   manager.Run()

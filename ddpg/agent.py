@@ -8,7 +8,7 @@ import replay_memory
 
 _REPLAY_MEMORY_SIZE = int(1e6)
 _BATCH_SIZE = 64
-_WARMUP_TIMESTEPS = _BATCH_SIZE * 10
+_WARMUP_TIMESTEPS = _BATCH_SIZE * 1
 _USE_RANK_BASED_REPLAY = True
 
 # Logging.

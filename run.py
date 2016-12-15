@@ -92,7 +92,8 @@ def Run():
                      checkpoint_directory=checkpoint_directory,
                      options=options, restore=FLAGS.restore)
   # Start experiment.
-  ddpg.Start(environment, agent, FLAGS.output_directory, options=options)
+  ddpg.Start(environment, agent, FLAGS.output_directory, options=options,
+             restore=FLAGS.restore)
 
 
 if __name__ == '__main__':
