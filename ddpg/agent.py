@@ -1,6 +1,7 @@
 import logging
 import gym
 import numpy as np
+import os
 
 import model
 import replay_memory
@@ -34,9 +35,15 @@ class Agent(object):
       self.replay_memory = replay_memory.RankBased(_REPLAY_MEMORY_SIZE, self.action_space_shape, observation_space_shape)
     else:
       self.replay_memory = replay_memory.Uniform(_REPLAY_MEMORY_SIZE, self.action_space_shape, observation_space_shape)
+    self.last_checkpoint_index = 0
+    if restore:
+      filename = self.replay_memory.Load(os.path.join(checkpoint_directory, 'memory.ckpt'))
+      LOG.info('Restoring replay memory from %s', filename)
+      self.last_checkpoint_index = int(filename.rsplit('-', 1)[1])
     LOG.info('Initialized agent with actions %s and observations %s',
              str(self.action_space_shape), str(observation_space_shape))
     # Tensorflow model.
+    self.checkpoint_directory = checkpoint_directory
     self.model = model.Model(self.action_space_shape, observation_space_shape, checkpoint_directory,
                              options=options, restore=restore)
 
@@ -63,7 +70,11 @@ class Agent(object):
       self.replay_memory.Update(np.abs(td_error))
 
   def Save(self, checkpoint_index):
+    self.last_checkpoint_index = checkpoint_index
     filename = self.model.Save(step=checkpoint_index)
     self.replay_memory.Save(os.path.join(self.checkpoint_directory, 'memory.ckpt'),
                             step=checkpoint_index)
     LOG.info('Saving checkpoint %s', filename)
+
+  def GetLatestSavedStep(self):
+    return self.last_checkpoint_index

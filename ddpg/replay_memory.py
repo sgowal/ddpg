@@ -1,4 +1,8 @@
+import cPickle as pickle
+import glob
 import numpy as np
+import os
+
 import sorter
 
 
@@ -40,12 +44,47 @@ class ReplayMemory(object):
   def Update(self, new_priorities):
     pass
 
-  def Save(filename_prefix, step=0):
-    # TODO: Support saving the memory to allow training restarts.
-    pass
+  def Save(self, filename_prefix, step=0):
+    self._DeletePreviousCheckpoint(filename_prefix)
+    filename = '%s-%d' % (filename_prefix, step)
+    with open(filename, 'wb') as fp:
+      pickler = pickle.Pickler(fp, -1)
+      self._Save(pickler)
+    return filename
+
+  def Load(self, filename_prefix):
+    latest_filename = max(glob.iglob('%s-*' % filename_prefix), key=os.path.getctime)
+    with open(latest_filename, 'rb') as fp:
+      unpickler = pickle.Unpickler(fp)
+      self._Load(unpickler)
+    return latest_filename
+
+  def _DeletePreviousCheckpoint(self, filename_prefix):
+    filenames = glob.iglob('%s-*' % filename_prefix)
+    for filename in filenames:
+      os.remove(filename)
+
+  def _Save(self, pickler):
+    pickler.dump(self.max_capacity)
+    pickler.dump(self.buffer_actions)
+    pickler.dump(self.buffer_observations)
+    pickler.dump(self.buffer_next_observations)
+    pickler.dump(self.buffer_rewards)
+    pickler.dump(self.buffer_done)
+    pickler.dump(self.current_index)
+
+  def _Load(self, unpickler):
+    self.max_capacity = unpickler.load()
+    self.buffer_actions = unpickler.load()
+    self.buffer_observations = unpickler.load()
+    self.buffer_next_observations = unpickler.load()
+    self.buffer_rewards = unpickler.load()
+    self.buffer_done = unpickler.load()
+    self.current_index = unpickler.load()
 
 
 class Uniform(ReplayMemory):
+
   def __init__(self, max_capacity, action_shape, observation_shape):
     super(Uniform, self).__init__(max_capacity, action_shape, observation_shape)
     self.uniform_weights = None
@@ -139,3 +178,15 @@ class RankBased(ReplayMemory):
       previous_segment_end = current_index
       next_limit += step_size
     self.distribution_segments = segments
+
+  def _Save(self, pickler):
+    super(RankBased, self)._Save(pickler)
+    pickler.dump(self.start_step)
+    pickler.dump(self.current_step)
+    self.sorter.Save(pickler)
+
+  def _Load(self, unpickler):
+    super(RankBased, self)._Load(unpickler)
+    self.start_step = unpickler.load()
+    self.current_step = unpickler.load()
+    self.sorter.Load(unpickler)

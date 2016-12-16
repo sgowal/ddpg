@@ -33,10 +33,12 @@ class Manager(object):
     self.monitoring_path = os.path.join(output_directory, 'monitor')
     environment.monitor.start(self.monitoring_path,
                               resume=restore,
-                              video_callable=lambda _: False, force=True)
+                              video_callable=lambda _: False)
     # Log performance.
     self.test_writer = tf.train.SummaryWriter(os.path.join(output_directory, 'test'))
     self.train_writer = tf.train.SummaryWriter(os.path.join(output_directory, 'train'))
+    # Upon restore, the agent knows the number of training steps done so far.
+    self.restored_num_training_timesteps = agent.GetLatestSavedStep()
 
   def __del__(self):
     self.environment.monitor.close()
@@ -90,7 +92,7 @@ class Manager(object):
       LOG.warn('Could not convert movie to gif for Tensorboard.')
 
   def Run(self):
-    num_training_timesteps = 0
+    num_training_timesteps = self.restored_num_training_timesteps
     while num_training_timesteps < self.options.max_timesteps:
       # Test.
       rewards = []

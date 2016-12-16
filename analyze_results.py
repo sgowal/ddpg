@@ -34,15 +34,21 @@ def Run():
       for value in event.summary.value:
         if value.tag == ddpg.AVERAGE_REWARD_TAG:
           average_reward[canonical_name].append((event.step, value.simple_value))
-          pass
         elif value.tag == ddpg.STDDEV_REWARD_TAG:
           stddev_reward[canonical_name].append((event.step, value.simple_value))
   # Plot.
   plt.figure()
   colors = ('coral', 'deepskyblue')
   for i, (k, v) in enumerate(average_reward.iteritems()):
-    timesteps, mean = zip(*v)
-    _, std = zip(*stddev_reward[k])
+    timesteps, mean = zip(*sorted(v))
+    _, std = zip(*sorted(stddev_reward[k]))
+    timesteps = np.array(timesteps)
+    mean = np.array(mean)
+    std = np.array(std)
+    # Timesteps can be duplicated when restoring from prior checkpoints.
+    timesteps, unique_indices = np.unique(timesteps, return_index=True)
+    mean = mean[unique_indices]
+    std = std[unique_indices]
     timesteps = np.array(timesteps)
     mean = np.array(mean)
     std = np.array(std)

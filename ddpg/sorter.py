@@ -42,6 +42,22 @@ class PseudoSorter(object):
       return None, None
     return self.heap[0], self.key_priorities[self.heap[0]]
 
+  def Save(self, pickler):
+    pickler.dump(self.size)
+    pickler.dump(self.heap)
+    pickler.dump(self.key_indices)
+    pickler.dump(self.key_priorities)
+    pickler.dump(self.max_capacity)
+    pickler.dump(self.updates_since_last_balancing)
+
+  def Load(self, unpickler):
+    self.size = unpickler.load()
+    self.heap = unpickler.load()
+    self.key_indices = unpickler.load()
+    self.key_priorities = unpickler.load()
+    self.max_capacity = unpickler.load()
+    self.updates_since_last_balancing = unpickler.load()
+
   def _Balance(self):
     # Resort according to priorities.
     sorted_indices = self.key_priorities[:self.size].argsort()[::-1]

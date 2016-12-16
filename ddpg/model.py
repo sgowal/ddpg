@@ -148,8 +148,8 @@ class Model(object):
                                                       maxval=1.0 / math.sqrt(previous_size))
           w = tf.get_variable('w', (previous_size, layer_size), initializer=initializer)
           b = tf.get_variable('b', (layer_size,), initializer=initializer)
-          params.extend([Variable(w, regularize=True, copy_as_is=False),
-                         Variable(b, regularize=True, copy_as_is=False)])
+          params.extend([Variable(w, regularize=False, copy_as_is=False),
+                         Variable(b, regularize=False, copy_as_is=False)])
           if _USE_ACTOR_BATCH_NORMALIZATION:
             params.extend(BatchNormalizationParameters((layer_size,), scale=False))
           previous_size = layer_size
@@ -159,8 +159,8 @@ class Model(object):
         initializer = tf.random_uniform_initializer(minval=-_LAST_LAYER_INIT, maxval=_LAST_LAYER_INIT)
         w = tf.get_variable('w', (previous_size, output_size), initializer=initializer)
         b = tf.get_variable('b', (output_size,), initializer=initializer)
-        params.extend((Variable(w, regularize=True, copy_as_is=False),
-                       Variable(b, regularize=True, copy_as_is=False)))
+        params.extend((Variable(w, regularize=False, copy_as_is=False),
+                       Variable(b, regularize=False, copy_as_is=False)))
         if _USE_ACTOR_BATCH_NORMALIZATION:
           params.extend(BatchNormalizationParameters((output_size,), scale=False))
         return params
