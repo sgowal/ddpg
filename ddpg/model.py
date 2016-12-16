@@ -219,12 +219,9 @@ class Model(object):
           b = tf.get_variable('b', (layer_size,), initializer=initializer)
           params.extend([Variable(w, regularize=True, copy_as_is=False),
                          Variable(b, regularize=True, copy_as_is=False)])
-          # Note that the original paper does not perform batch normalization on the input or
-          # on layers after the action is input. This also go in line with my personal
-          # observations that batch normalization in the critic network should be used
-          # sparsely.
-          # if i < _INSERT_ACTION_IN_CRITIC_AT_LAYER and _USE_CRITIC_BATCH_NORMALIZATION:
-          #   params.extend(BatchNormalizationParameters((layer_size,), scale=False))
+          # The original paper batch normalizes each layer until the layer that
+          # includes the action (exluded). I found that the training behaved
+          # more consistently by only batch normalizing the observation input.
           previous_size = layer_size
       # Output q-value.
       with tf.variable_scope('output'):
@@ -257,10 +254,6 @@ class Model(object):
           b = params[index + 1].tensor
           index += 2
           previous_input = tf.nn.xw_plus_b(previous_input, w, b)
-          # if i < _INSERT_ACTION_IN_CRITIC_AT_LAYER and _USE_CRITIC_BATCH_NORMALIZATION:
-          #   bn = params[index: index + 4]
-          #   index += 4
-          #   previous_input = BatchNormalization(previous_input, bn, is_training=is_training)
           previous_input = tf.nn.relu(previous_input)
       # Output q-value.
       with tf.variable_scope('output'):

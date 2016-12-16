@@ -64,4 +64,6 @@ class Agent(object):
 
   def Save(self, checkpoint_index):
     filename = self.model.Save(step=checkpoint_index)
+    self.replay_memory.Save(os.path.join(self.checkpoint_directory, 'memory.ckpt'),
+                            step=checkpoint_index)
     LOG.info('Saving checkpoint %s', filename)

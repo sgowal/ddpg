@@ -40,6 +40,10 @@ class ReplayMemory(object):
   def Update(self, new_priorities):
     pass
 
+  def Save(filename_prefix, step=0):
+    # TODO: Support saving the memory to allow training restarts.
+    pass
+
 
 class Uniform(ReplayMemory):
   def __init__(self, max_capacity, action_shape, observation_shape):
