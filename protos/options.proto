@@ -11,7 +11,7 @@ message Options {
   optional string device = 5 [default = "/cpu:0"];
   optional int32 replay_memory_size = 19 [default = 1000000];
   optional int32 batch_size = 20 [default = 64];
-  optional int32 warmup_timesteps = 21 [default = 128];
+  optional int32 warmup_timesteps = 21 [default = 640];
   optional bool use_rank_based_replay = 22 [default = true];
 
   // Model options.
