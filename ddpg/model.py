@@ -6,20 +6,6 @@ import operator
 import os
 import tensorflow as tf
 
-_LEARNING_RATE_ACTOR = 1e-4
-_LEARNING_RATE_CRITIC = 1e-3
-_L2_WEIGHT_DECAY = 1e-2  # Only for Q.
-_LAYERS = [400, 300]
-_INSERT_ACTION_IN_CRITIC_AT_LAYER = 1
-_LAST_LAYER_INIT = 3e-3  # Other layers are initialized with 1/sqrt(n).
-_DISCOUNT_FACTOR = .99
-_EXPLORATION_NOISE_THETA = 0.15  # Ornstein-Uhlenbeck process.
-_EXPLORATION_NOISE_SIGMA = 0.2
-_TAU = 1e-3  # Leaky-integrator for parameters.
-_USE_ACTOR_BATCH_NORMALIZATION = True
-_USE_CRITIC_BATCH_NORMALIZATION = True
-BATCH_NORMALIZATION_DECAY = 0.99
-
 
 # Logging.
 LOG = logging.getLogger(__name__)
@@ -38,6 +24,8 @@ class Model(object):
     self.observation_shape = observation_shape
     # Create networks.
     self.options = options
+    if not self.options.layer_size:
+      self.options.layer_size.extend([400, 300])
     self.Create()
     # Create saver.
     self.saver = tf.train.Saver(max_to_keep=1)
@@ -66,16 +54,16 @@ class Model(object):
       parameters_actor = self.ActorNetworkParameters(name='actor_parameters')
       parameters_critic = self.CriticNetworkParameters(name='critic_parameters')
       parameters_target_actor, update_target_actor = PropagateToTargetNetwork(
-          parameters_actor, 1. - _TAU, name='target_actor_parameters')
+          parameters_actor, 1. - self.options.tau, name='target_actor_parameters')
       parameters_target_critic, update_target_critic = PropagateToTargetNetwork(
-          parameters_critic, 1. - _TAU, name='target_critic_parameters')
+          parameters_critic, 1. - self.options.tau, name='target_critic_parameters')
 
       # Non-trainable actor network.
       single_input_observation = tf.placeholder(tf.float32, shape=(1,) + self.observation_shape)
       single_action = self.ActorNetwork(single_input_observation, parameters_actor, name='single_actor')
       # Add exploration (using Ornstein-Uhlenbeck process) - only used when a single action is given.
       action_noise, reset_op = OrnsteinUhlenbeckProcess(
-          (1,) + self.action_shape, _EXPLORATION_NOISE_THETA, _EXPLORATION_NOISE_SIGMA)
+          (1,) + self.action_shape, self.options.exploration_noise_theta, self.options.exploration_noise_sigma)
       self.reset_ops.append(reset_op)
       noisy_action = single_action + action_noise
 
@@ -85,7 +73,7 @@ class Model(object):
       with tf.variable_scope('actor_loss'):
         q_value = self.CriticNetwork(action, input_observation, parameters_critic, name='fixed_critic')
         loss = -tf.reduce_mean(q_value, 0)  # Maximize Q-value.
-        optimizer = tf.train.AdamOptimizer(learning_rate=_LEARNING_RATE_ACTOR)
+        optimizer = tf.train.AdamOptimizer(learning_rate=self.options.actor_learning_rate)
         # Only update parameters of the actor network.
         gradients = optimizer.compute_gradients(loss, var_list=[p.tensor for p in parameters_actor])
         train_op = optimizer.apply_gradients(gradients)
@@ -106,12 +94,12 @@ class Model(object):
             self.ActorNetwork(input_next_observation, parameters_target_actor, name='target_actor'),
             input_next_observation, parameters_target_critic, name='target_critic')
         q_value_target = tf.stop_gradient(  # Gradient are not propagated to the target networks.
-            tf.select(input_done, input_reward, input_reward + _DISCOUNT_FACTOR * q_value_target))
+            tf.select(input_done, input_reward, input_reward + self.options.discount_factor * q_value_target))
         # Training critic.
         td_error = q_value - q_value_target
         loss = tf.reduce_sum(input_weight * tf.square(td_error), 0)  # Minimize weighted TD-error.
-        loss += tf.add_n([_L2_WEIGHT_DECAY * tf.nn.l2_loss(p.tensor) for p in parameters_critic if p.regularize])
-        optimizer = tf.train.AdamOptimizer(learning_rate=_LEARNING_RATE_CRITIC)
+        loss += tf.add_n([self.options.critic_weight_decay * tf.nn.l2_loss(p.tensor) for p in parameters_critic if p.regularize])
+        optimizer = tf.train.AdamOptimizer(learning_rate=self.options.critic_learning_rate)
         gradients = optimizer.compute_gradients(loss, var_list=[p.tensor for p in parameters_critic])
         train_op = optimizer.apply_gradients(gradients)
         # Training the critic include propagating the learned parameters.
@@ -137,12 +125,12 @@ class Model(object):
     with tf.variable_scope(name):
       # Input is flattened.
       previous_size = reduce(operator.mul, self.observation_shape, 1)
-      if _USE_ACTOR_BATCH_NORMALIZATION:
+      if self.options.use_actor_batch_normalization:
         # This is not strictly needed but helps given that the weights of the next layer are
         # always initialized with the same variance.
         params.extend(BatchNormalizationParameters((previous_size,), scale=False, center=False))
       # Layers.
-      for i, layer_size in enumerate(_LAYERS):
+      for i, layer_size in enumerate(self.options.layer_size):
         with tf.variable_scope('layer_%d' % i):
           initializer = tf.random_uniform_initializer(minval=-1.0 / math.sqrt(previous_size),
                                                       maxval=1.0 / math.sqrt(previous_size))
@@ -150,18 +138,18 @@ class Model(object):
           b = tf.get_variable('b', (layer_size,), initializer=initializer)
           params.extend([Variable(w, regularize=False, copy_as_is=False),
                          Variable(b, regularize=False, copy_as_is=False)])
-          if _USE_ACTOR_BATCH_NORMALIZATION:
+          if self.options.use_actor_batch_normalization:
             params.extend(BatchNormalizationParameters((layer_size,), scale=False))
           previous_size = layer_size
       # Output action.
       with tf.variable_scope('output'):
         output_size = reduce(operator.mul, self.action_shape, 1)
-        initializer = tf.random_uniform_initializer(minval=-_LAST_LAYER_INIT, maxval=_LAST_LAYER_INIT)
+        initializer = tf.random_uniform_initializer(minval=-self.options.initialization_range_last_layer, maxval=self.options.initialization_range_last_layer)
         w = tf.get_variable('w', (previous_size, output_size), initializer=initializer)
         b = tf.get_variable('b', (output_size,), initializer=initializer)
         params.extend((Variable(w, regularize=False, copy_as_is=False),
                        Variable(b, regularize=False, copy_as_is=False)))
-        if _USE_ACTOR_BATCH_NORMALIZATION:
+        if self.options.use_actor_batch_normalization:
           params.extend(BatchNormalizationParameters((output_size,), scale=False))
         return params
 
@@ -171,21 +159,23 @@ class Model(object):
       # Input is flattened.
       flat_input_observation = tf.contrib.layers.flatten(input_observation)
       previous_input = flat_input_observation
-      if _USE_ACTOR_BATCH_NORMALIZATION:
+      if self.options.use_actor_batch_normalization:
         bn = params[index: index + 4]
         index += 4
-        previous_input = BatchNormalization(previous_input, bn, is_training=is_training)
+        previous_input = BatchNormalization(previous_input, bn, is_training=is_training,
+                                            decay=self.options.batch_normalization_decay)
       # Layers.
-      for i, layer_size in enumerate(_LAYERS):
+      for i, layer_size in enumerate(self.options.layer_size):
         with tf.variable_scope('layer_%d' % i):
           w = params[index].tensor
           b = params[index + 1].tensor
           index += 2
           previous_input = tf.nn.xw_plus_b(previous_input, w, b)
-          if _USE_ACTOR_BATCH_NORMALIZATION:
+          if self.options.use_actor_batch_normalization:
             bn = params[index: index + 4]
             index += 4
-            previous_input = BatchNormalization(previous_input, bn, is_training=is_training)
+            previous_input = BatchNormalization(previous_input, bn, is_training=is_training,
+                                                decay=self.options.batch_normalization_decay)
           previous_input = tf.nn.relu(previous_input)
       # Output action.
       with tf.variable_scope('output'):
@@ -194,10 +184,11 @@ class Model(object):
         index += 2
         # TODO: Reshape to requested shape.
         previous_input = tf.nn.xw_plus_b(previous_input, w, b)
-        if _USE_ACTOR_BATCH_NORMALIZATION:
+        if self.options.use_actor_batch_normalization:
           bn = params[index: index + 4]
           index += 4
-          previous_input = BatchNormalization(previous_input, bn, is_training=is_training)
+          previous_input = BatchNormalization(previous_input, bn, is_training=is_training,
+                                              decay=self.options.batch_normalization_decay)
         return tf.nn.tanh(previous_input)
 
   def CriticNetworkParameters(self, name='critic'):
@@ -205,12 +196,12 @@ class Model(object):
     with tf.variable_scope(name):
       # Input is flattened.
       previous_size = reduce(operator.mul, self.observation_shape, 1)
-      if _USE_CRITIC_BATCH_NORMALIZATION:
+      if self.options.use_critic_batch_normalization:
         params.extend(BatchNormalizationParameters((previous_size,), scale=False, center=False))
       # Layers.
-      for i, layer_size in enumerate(_LAYERS):
+      for i, layer_size in enumerate(self.options.layer_size):
         with tf.variable_scope('layer_%d' % i):
-          if i == _INSERT_ACTION_IN_CRITIC_AT_LAYER:
+          if i == self.options.critic_action_inserted_at_layer:
             # Input action in the second layer.
             previous_size += reduce(operator.mul, self.action_shape, 1)
           initializer = tf.random_uniform_initializer(minval=-1.0 / math.sqrt(previous_size),
@@ -226,7 +217,7 @@ class Model(object):
       # Output q-value.
       with tf.variable_scope('output'):
         output_size = 1
-        initializer = tf.random_uniform_initializer(minval=-_LAST_LAYER_INIT, maxval=_LAST_LAYER_INIT)
+        initializer = tf.random_uniform_initializer(minval=-self.options.initialization_range_last_layer, maxval=self.options.initialization_range_last_layer)
         w = tf.get_variable('w', (previous_size, output_size), initializer=initializer)
         b = tf.get_variable('b', (output_size,), initializer=initializer)
         params.extend((Variable(w, regularize=True, copy_as_is=False),
@@ -239,12 +230,13 @@ class Model(object):
       # Input is flattened.
       flat_input_observation = tf.contrib.layers.flatten(input_observation)
       previous_input = flat_input_observation
-      if _USE_CRITIC_BATCH_NORMALIZATION:
+      if self.options.use_critic_batch_normalization:
         bn = params[index: index + 4]
         index += 4
-        previous_input = BatchNormalization(previous_input, bn, is_training=is_training)
+        previous_input = BatchNormalization(previous_input, bn, is_training=is_training,
+                                            decay=self.options.batch_normalization_decay)
       # Layers.
-      for i, layer_size in enumerate(_LAYERS):
+      for i, layer_size in enumerate(self.options.layer_size):
         with tf.variable_scope('layer_%d' % i):
           if i == 1:
             # Input action in the second layer.
@@ -318,7 +310,7 @@ def BatchNormalizationParameters(shape, center=True, scale=True, name=None):
           Variable(average_var, regularize=False, copy_as_is=True)]
 
 
-def BatchNormalization(input_tensor, params, decay=BATCH_NORMALIZATION_DECAY,
+def BatchNormalization(input_tensor, params, decay=0.99,
                        epsilon=1e-3, is_training=False, name=None):
   with tf.variable_scope('bn'):
     beta, gamma, average_mean, average_var = params

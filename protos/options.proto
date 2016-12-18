@@ -9,4 +9,23 @@ message Options {
 
   // Agent options.
   optional string device = 5 [default = "/cpu:0"];
+  optional int32 replay_memory_size = 19 [default = 1000000];
+  optional int32 batch_size = 20 [default = 64];
+  optional int32 warmup_timesteps = 21 [default = 128];
+  optional bool use_rank_based_replay = 22 [default = true];
+
+  // Model options.
+  optional double actor_learning_rate = 6 [default = 1e-4];
+  optional double critic_learning_rate = 7 [default = 1e-3];
+  optional double critic_weight_decay = 8 [default = 1e-2];
+  repeated int32 layer_size = 9;  // If not set, assumes [400, 300].
+  optional int32 critic_action_inserted_at_layer = 10 [default = 1];  // Insert action in the second layer.
+  optional double initialization_range_last_layer = 11 [default = 3e-3];
+  optional double discount_factor = 12 [default = 0.99];
+  optional double exploration_noise_theta = 13 [default = 0.15];
+  optional double exploration_noise_sigma = 14 [default = 0.2];
+  optional double tau = 15 [default = 1e-3];
+  optional bool use_actor_batch_normalization = 16 [default = true];
+  optional bool use_critic_batch_normalization = 17 [default = true];
+  optional double batch_normalization_decay = 18 [default = 0.99];
 }

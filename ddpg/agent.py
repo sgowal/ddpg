@@ -7,11 +7,6 @@ import model
 import replay_memory
 
 
-_REPLAY_MEMORY_SIZE = int(1e6)
-_BATCH_SIZE = 64
-_WARMUP_TIMESTEPS = _BATCH_SIZE * 1
-_USE_RANK_BASED_REPLAY = True
-
 # Logging.
 LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
@@ -20,6 +15,7 @@ LOG.setLevel(logging.INFO)
 class Agent(object):
 
   def __init__(self, action_space, observation_space, checkpoint_directory, options, restore=False):
+    self.options = options
     self.action_space = action_space
     if isinstance(action_space, gym.spaces.Discrete):
       # The following is a hack that casts the discrete problems to continuous ones.
@@ -31,10 +27,10 @@ class Agent(object):
       self.action_space_shape = action_space.shape
       self.continuous_actions = True
     observation_space_shape = observation_space.shape
-    if _USE_RANK_BASED_REPLAY:
-      self.replay_memory = replay_memory.RankBased(_REPLAY_MEMORY_SIZE, self.action_space_shape, observation_space_shape)
+    if self.options.use_rank_based_replay:
+      self.replay_memory = replay_memory.RankBased(self.options.replay_memory_size, self.action_space_shape, observation_space_shape)
     else:
-      self.replay_memory = replay_memory.Uniform(_REPLAY_MEMORY_SIZE, self.action_space_shape, observation_space_shape)
+      self.replay_memory = replay_memory.Uniform(self.options.replay_memory_size, self.action_space_shape, observation_space_shape)
     self.last_checkpoint_index = 0
     if restore:
       filename = self.replay_memory.Load(os.path.join(checkpoint_directory, 'memory.ckpt'))
@@ -64,8 +60,8 @@ class Agent(object):
     if not is_training:
       return
     self.replay_memory.Add(self.action, self.observation, reward, done, next_observation)
-    if len(self.replay_memory) >= _WARMUP_TIMESTEPS:
-      batch = self.replay_memory.Sample(_BATCH_SIZE)
+    if len(self.replay_memory) >= self.options.warmup_timesteps:
+      batch = self.replay_memory.Sample(self.options.batch_size)
       td_error = self.model.Train(*batch)
       self.replay_memory.Update(np.abs(td_error))
 
