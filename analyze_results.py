@@ -56,7 +56,6 @@ def Run():
     plt.fill_between(timesteps, mean - std, mean + std, color=colors[i % len(colors)], alpha=.5)
   plt.legend(loc='lower right')
   plt.xlim((0, np.max(timesteps)))
-  plt.ylim(bottom=0)
   plt.grid('on')
   plt.xlabel('Step')
   plt.ylabel('Reward')
