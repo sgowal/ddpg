@@ -6,12 +6,14 @@ import numpy as np
 import matplotlib.pylab as plt
 import os
 import tensorflow as tf
+import re
 
 import ddpg
 
 flags = tf.app.flags
 flags.DEFINE_string('event_directory', None, 'Directory where TensorFlow results are stored.')
 flags.DEFINE_string('show_only', None, 'Comma-separated list of subdirectories to include in the report.')
+flags.DEFINE_string('group_by', None, 'Comma-separated list of regular expressions that are used to average across multiple runs.')
 FLAGS = flags.FLAGS
 
 
@@ -36,6 +38,20 @@ def Run():
           average_reward[canonical_name].append((event.step, value.simple_value))
         elif value.tag == ddpg.STDDEV_REWARD_TAG:
           stddev_reward[canonical_name].append((event.step, value.simple_value))
+  if not average_reward:
+    print('No data found.')
+    return
+  if FLAGS.group_by is not None:
+    print('Hello')
+    regexps = FLAGS.group_by.split(',')
+    groups = collections.defaultdict(lambda: [])
+    for i, (k, v) in enumerate(average_reward.iteritems()):
+      print(k)
+      valid_regexps = [r for r in regexps if re.match(r, k) is not None]
+      timesteps, mean = zip(*sorted(v))
+      for r in valid_regexps:
+        groups[r].append((timesteps, mean))
+    print(groups)
   # Plot.
   plt.figure()
   colors = ('coral', 'deepskyblue')
