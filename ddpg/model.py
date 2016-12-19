@@ -65,7 +65,13 @@ class Model(object):
       action_noise, reset_op = OrnsteinUhlenbeckProcess(
           (1,) + self.action_shape, self.options.exploration_noise_theta, self.options.exploration_noise_sigma)
       self.reset_ops.append(reset_op)
+      # The model is really only insterested in actions between -1 and 1. Hence, we mirror actions if they
+      # saturate over these limits.
+      # TODO: investigate. Might need to have larger zones of -1 and +1 (i.e., upper bound = 1 + margin)
       noisy_action = single_action + action_noise
+      noisy_action = 1. - tf.abs(1. - noisy_action)  # Mirror upper-bound.
+      noisy_action = tf.abs(- 1. - noisy_action) - 1.  # Mirror lower-bound.
+      noisy_action = tf.maximum(tf.minimum(noisy_action, 1.), -1.)  # Saturate just in case.
 
       # Training actor.
       input_observation = tf.placeholder(tf.float32, shape=(None,) + self.observation_shape)
