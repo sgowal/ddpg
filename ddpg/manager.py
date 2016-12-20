@@ -93,7 +93,7 @@ class Manager(object):
 
   def Run(self):
     num_training_timesteps = self.restored_num_training_timesteps
-    while num_training_timesteps < self.options.max_timesteps:
+    while True:
       # Test.
       rewards = []
       for i in range(self.environment.spec.trials):
@@ -102,6 +102,8 @@ class Manager(object):
       self.WriteMovieSummary(num_training_timesteps)
       if self.environment.spec.reward_threshold and average_reward > self.environment.spec.reward_threshold:
         LOG.info('Surpassing reward threshold of %.2f. Stopping...', self.environment.spec.reward_threshold)
+        break
+      if num_training_timesteps >= self.options.max_timesteps:
         break
 
       # Train.

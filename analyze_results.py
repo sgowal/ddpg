@@ -41,17 +41,38 @@ def Run():
   if not average_reward:
     print('No data found.')
     return
+
   if FLAGS.group_by is not None:
-    print('Hello')
     regexps = FLAGS.group_by.split(',')
+    common_directory = os.path.commonprefix(regexps)
+    if common_directory and common_directory[-1] != '/':
+      common_directory = os.path.dirname(common_directory) + '/'
     groups = collections.defaultdict(lambda: [])
     for i, (k, v) in enumerate(average_reward.iteritems()):
-      print(k)
-      valid_regexps = [r for r in regexps if re.match(r, k) is not None]
+      valid_regexps = [r[len(common_directory):] for r in regexps if re.match(r, k) is not None]
       timesteps, mean = zip(*sorted(v))
       for r in valid_regexps:
-        groups[r].append((timesteps, mean))
-    print(groups)
+        groups[r].append((np.array(timesteps), np.array(mean)))
+    average_reward = collections.defaultdict(lambda: [])
+    stddev_reward = collections.defaultdict(lambda: [])
+    for k, v in groups.iteritems():
+      timesteps = []
+      for t, _ in v:
+        if len(timesteps) < len(t):
+          timesteps = t
+      values = []
+      for _, m in v:
+        expanded_mean = np.empty_like(timesteps, dtype=np.float32)
+        expanded_mean[:len(m)] = m
+        expanded_mean[len(m):] = m[-1]
+        values.append(expanded_mean)
+      values = np.vstack(values)
+      mean = np.mean(values, axis=0)
+      std = np.std(values, axis=0)
+      for t, m, s in zip(timesteps, mean, std):
+        average_reward[k].append((t, m))
+        stddev_reward[k].append((t, s))
+
   # Plot.
   plt.figure()
   colors = ('coral', 'deepskyblue')
@@ -70,7 +91,8 @@ def Run():
     std = np.array(std)
     plt.plot(timesteps, mean, color=colors[i % len(colors)], lw=2, label=k)
     plt.fill_between(timesteps, mean - std, mean + std, color=colors[i % len(colors)], alpha=.5)
-  plt.legend(loc='lower right')
+  if len(average_reward) > 1:
+    plt.legend(loc='lower right')
   plt.xlim((0, np.max(timesteps)))
   plt.grid('on')
   plt.xlabel('Step')

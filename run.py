@@ -105,8 +105,9 @@ def Run():
     # Clear TensorFlow.
     tf.reset_default_graph()
   if FLAGS.run_many > 1:
-    LOG.info('To visualize results: tensorboard --logdir="%s"' % FLAGS.output_directory)
-    LOG.info('Or plot performance: python analyze_results.py --event_directory="%s"' % os.path.join(FLAGS.output_directory, '*'))
+    LOG.info('To visualize results: tensorboard --logdir="%s"', FLAGS.output_directory)
+    LOG.info('Or plot performance: python analyze_results.py --event_directory="%s" --group_by="run_\d\d\d/train,run_\d\d\d/test"',
+             os.path.join(FLAGS.output_directory, '*'))
 
 
 if __name__ == '__main__':
