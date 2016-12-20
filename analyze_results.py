@@ -12,7 +12,7 @@ import ddpg
 
 flags = tf.app.flags
 flags.DEFINE_string('event_directory', None, 'Directory where TensorFlow results are stored.')
-flags.DEFINE_string('show_only', None, 'Comma-separated list of subdirectories to include in the report.')
+flags.DEFINE_string('show_only', None, 'Comma-separated list of regular expressions that are matched against all subdirectories to include in the report.')
 flags.DEFINE_string('group_by', None, 'Comma-separated list of regular expressions that are used to average across multiple runs.')
 FLAGS = flags.FLAGS
 
@@ -28,7 +28,7 @@ def Run():
   stddev_reward = collections.defaultdict(lambda: [])
   for event_file in event_files:
     canonical_name = os.path.dirname(event_file[len(common_directory):])
-    if whitelist and canonical_name not in whitelist:
+    if whitelist and not any(re.match(w, canonical_name) for w in whitelist):
       print('Skipping', canonical_name)
       continue
     print('Analyzing', canonical_name)
@@ -44,12 +44,17 @@ def Run():
 
   if FLAGS.group_by is not None:
     regexps = FLAGS.group_by.split(',')
-    common_directory = os.path.commonprefix(regexps)
-    if common_directory and common_directory[-1] != '/':
-      common_directory = os.path.dirname(common_directory) + '/'
+    # common_directory = os.path.commonprefix(regexps)
+    # if common_directory and common_directory[-1] != '/':
+    #   common_directory = os.path.dirname(common_directory) + '/'
     groups = collections.defaultdict(lambda: [])
     for i, (k, v) in enumerate(average_reward.iteritems()):
-      valid_regexps = [r[len(common_directory):] for r in regexps if re.match(r, k) is not None]
+      valid_regexps = []
+      for r in regexps:
+        g = re.match(r, k)
+        if not g:
+          continue
+        valid_regexps.append('/'.join(g.groups()))
       timesteps, mean = zip(*sorted(v))
       for r in valid_regexps:
         groups[r].append((np.array(timesteps), np.array(mean)))

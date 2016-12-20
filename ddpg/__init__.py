@@ -5,6 +5,7 @@ from manager import STDDEV_REWARD_TAG
 
 try:
   from options_pb2 import Options
+  from options_pb2 import OptionVariants
 except ImportError as e:
   print 'Cannot find options_pb2.py, run "protoc -I=protos --python_out=ddpg protos/options.proto"'
   raise e

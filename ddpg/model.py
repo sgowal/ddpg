@@ -69,11 +69,11 @@ class Model(object):
       # The model is really only insterested in actions between -1 and 1. Hence, we mirror actions if they
       # saturate over these limits.
       # TODO: Investigate the next 5 lines.
-      upper_bound = 1.1  # Add some margins so that saturated actions are explored more often.
-      lower_bound = -1.1
-      noisy_action = upper_bound - tf.abs(upper_bound - noisy_action)  # Mirror upper-bound.
-      noisy_action = lower_bound + tf.abs(lower_bound - noisy_action)  # Mirror lower-bound.
-      noisy_action = tf.maximum(tf.minimum(noisy_action, 1.), -1.)  # Saturate just in case.
+      # upper_bound = 1.1  # Add some margins so that saturated actions are explored more often.
+      # lower_bound = -1.1
+      # noisy_action = upper_bound - tf.abs(upper_bound - noisy_action)  # Mirror upper-bound.
+      # noisy_action = lower_bound + tf.abs(lower_bound - noisy_action)  # Mirror lower-bound.
+      # noisy_action = tf.maximum(tf.minimum(noisy_action, 1.), -1.)  # Saturate just in case.
 
       # Training actor.
       input_observation = tf.placeholder(tf.float32, shape=(None,) + self.observation_shape)

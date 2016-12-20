@@ -29,3 +29,12 @@ message Options {
   optional bool use_critic_batch_normalization = 17 [default = true];
   optional double batch_normalization_decay = 18 [default = 0.99];
 }
+
+// Message that lists multiple option variants to run.
+message OptionVariants {
+  message Variant {
+    optional string name = 1;
+    optional Options options = 2;
+  }
+  repeated Variant variant = 1;
+}

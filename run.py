@@ -31,16 +31,20 @@ flags.DEFINE_string('output_directory', None, 'Directory where results are store
 flags.DEFINE_bool('list', False, 'Shows list of Gym environments.')
 flags.DEFINE_bool('force', False, 'Overwrite --output_directory if it already exists.')
 flags.DEFINE_bool('restore', False, 'Restore from a previous Run.')
-flags.DEFINE_integer('run_many', 1, 'The whole training pipeline can be repeated many times if needed (serially).')
-
-# Flags for training options.
+flags.DEFINE_integer('run_many', 1, 'The whole training pipeline can be repeated many times if needed (sequentially).')
 flags.DEFINE_string('options', None, 'ddpg.Options protocol buffer in ASCII format.')
+flags.DEFINE_string('option_variants', None,
+                    'ddpg.OptionVariants protocol buffer in ASCII format. Runs the pipeline '
+                    'for each option variant sequentially. The --options field is used as default values.')
 FLAGS = flags.FLAGS
 
 
 # Logging.
 LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
+
+_SINGLE_VARIANT = '__single_variant__'
+_OPTIONS_FILENAME = 'options.pbtxt'
 
 
 def CreateDirectory(directory, force=False):
@@ -78,36 +82,77 @@ def Run():
       return
   else:
     assert FLAGS.run_many == 1, '--run_many must be equal to 1 when --restore is set.'
+    assert FLAGS.option_variants is None, '--option_variants cannot be used with --restore.'
 
-  for run_index in range(FLAGS.run_many):
-    if FLAGS.run_many > 1:
-      output_directory = os.path.join(FLAGS.output_directory, 'run_%03d' % run_index)
-    else:
-      output_directory = FLAGS.output_directory
-    checkpoint_directory = os.path.join(output_directory, 'checkpoints')
-    if not FLAGS.restore and not CreateDirectory(checkpoint_directory):
+  # Read options.
+  options = ddpg.Options()
+  if FLAGS.options:
+    google.protobuf.text_format.Merge(FLAGS.options, options)
+  option_variants = {}
+  if FLAGS.option_variants:
+    variants = ddpg.OptionVariants()
+    google.protobuf.text_format.Merge(FLAGS.option_variants, variants)
+    for v in variants.variant:
+      assert re.match(r'^[A-Za-z0-9_]+$', v.name), 'Variant name cannot be "%s", it must match [A-Za-z0-9_]+' % v.name
+      o = ddpg.Options()
+      o.CopyFrom(options)
+      o.MergeFrom(v.options)
+      option_variants[v.name] = o
+  else:
+    option_variants[_SINGLE_VARIANT] = options
+
+  for variant_name, variant_options in option_variants.iteritems():
+    variant_directory = (FLAGS.output_directory if variant_name == _SINGLE_VARIANT else
+                         os.path.join(FLAGS.output_directory, variant_name))
+    if variant_name != _SINGLE_VARIANT and not CreateDirectory(variant_directory):
       return
 
-    # Read options.
-    options = ddpg.Options()
-    if FLAGS.options:
-      google.protobuf.text_format.Merge(FLAGS.options, options)
+    # Store the options used in plain text. When restoring and if the options are different
+    # warn the user. TODO: Compare the fields and not the ASCII format.
+    options_filename = os.path.join(variant_directory, _OPTIONS_FILENAME)
+    new_options = str(variant_options)
+    if FLAGS.restore:
+      with open(options_filename) as fp:
+        previous_options = fp.read()
+      if new_options != previous_options:
+        LOG.warn('New options used for --restore are different from the previously used options.')
+    with open(options_filename, 'w') as fp:
+      fp.write(str(new_options))
 
-    # Create environment.
-    environment = gym.make(FLAGS.environment)
-    # Create Agent that will interact with the environment.
-    agent = ddpg.Agent(environment.action_space, environment.observation_space,
-                       checkpoint_directory=checkpoint_directory,
-                       options=options, restore=FLAGS.restore)
-    # Start experiment.
-    ddpg.Start(environment, agent, output_directory, options=options,
-               restore=FLAGS.restore)
-    # Clear TensorFlow.
-    tf.reset_default_graph()
-  if FLAGS.run_many > 1:
-    LOG.info('To visualize results: tensorboard --logdir="%s"', FLAGS.output_directory)
-    LOG.info('Or plot performance: python analyze_results.py --event_directory="%s" --group_by="run_\d\d\d/train,run_\d\d\d/test"',
-             os.path.join(FLAGS.output_directory, '*'))
+    for run_index in range(FLAGS.run_many):
+      output_directory = (os.path.join(variant_directory, 'run_%03d' % run_index) if FLAGS.run_many > 1 else
+                          variant_directory)
+      checkpoint_directory = os.path.join(output_directory, 'checkpoints')
+      if not FLAGS.restore and not CreateDirectory(checkpoint_directory):
+        return
+
+      # Create environment.
+      environment = gym.make(FLAGS.environment)
+      # Create Agent that will interact with the environment.
+      agent = ddpg.Agent(environment.action_space, environment.observation_space,
+                         checkpoint_directory=checkpoint_directory,
+                         options=options, restore=FLAGS.restore)
+      # Start experiment.
+      ddpg.Start(environment, agent, output_directory, options=options,
+                 restore=FLAGS.restore)
+      # Clear TensorFlow.
+      tf.reset_default_graph()
+
+  # Print helper text for plotting results.
+  num_levels = int(FLAGS.run_many > 1) + int(FLAGS.option_variants is not None)
+  LOG.info('To visualize results: tensorboard --logdir="%s"', FLAGS.output_directory)
+  if num_levels == 1:
+    if FLAGS.run_many > 1:
+      LOG.info('Or plot performance: python analyze_results.py --event_directory="%s" --group_by="run_\d\d\d/test"',
+               os.path.join(FLAGS.output_directory, '*'))
+    else:
+      LOG.info('Or plot performance: python analyze_results.py --event_directory="%s" --group_by="([A-Za-z0-9_]+)/test"',
+               os.path.join(FLAGS.output_directory, '*'))
+  elif num_levels == 2:
+    LOG.info('Or plot performance: python analyze_results.py --event_directory="%s" --group_by="([A-Za-z0-9_]+)/run_\d\d\d/test"',
+             os.path.join(FLAGS.output_directory, '*/*'))
+  else:
+    LOG.info('Or plot performance: python analyze_results.py --event_directory="%s"', FLAGS.output_directory)
 
 
 if __name__ == '__main__':

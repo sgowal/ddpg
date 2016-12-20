@@ -121,8 +121,6 @@ class Manager(object):
       num_training_timesteps += training_timesteps
       self.WriteResultSummary(num_training_timesteps, rewards, is_training=True)
       self.agent.Save(num_training_timesteps)
-    LOG.info('To visualize results: tensorboard --logdir="%s"' % self.output_directory)
-    LOG.info('Or plot performance: python analyze_results.py --event_directory="%s"' % self.output_directory)
 
   def RunEpisode(self, is_training=False, record_video=False, show=False):
     self.environment.monitor.configure(lambda _: record_video and not self.options.disable_rendering,
@@ -131,6 +129,7 @@ class Manager(object):
     timesteps = 0
     done = False
 
+    self.agent.Reset()
     observation = self.environment.reset()
     while not done:
       if show and not self.options.disable_rendering:
