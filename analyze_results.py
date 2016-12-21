@@ -72,7 +72,8 @@ def Run():
         expanded_mean[len(m):] = m[-1]
         values.append(expanded_mean)
       values = np.vstack(values)
-      mean = np.mean(values, axis=0)
+      # mean = np.mean(values, axis=0)
+      mean = np.median(values, axis=0)
       std = np.std(values, axis=0)
       for t, m, s in zip(timesteps, mean, std):
         average_reward[k].append((t, m))
@@ -80,7 +81,7 @@ def Run():
 
   # Plot.
   plt.figure()
-  colors = ('coral', 'deepskyblue')
+  colors = _GetColors(len(average_reward))
   for i, (k, v) in enumerate(average_reward.iteritems()):
     timesteps, mean = zip(*sorted(v))
     _, std = zip(*sorted(stddev_reward[k]))
@@ -103,6 +104,11 @@ def Run():
   plt.xlabel('Step')
   plt.ylabel('Reward')
   plt.show()
+
+
+def _GetColors(n):
+  cm = plt.get_cmap('gist_rainbow')
+  return [cm(float(i) / float(n)) for i in range(n)]
 
 
 if __name__ == '__main__':
