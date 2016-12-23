@@ -39,6 +39,10 @@ class Manager(object):
     self.train_writer = tf.train.SummaryWriter(os.path.join(output_directory, 'train'))
     # Upon restore, the agent knows the number of training steps done so far.
     self.restored_num_training_timesteps = agent.GetLatestSavedStep()
+    # HACK to allow the environment to know where to save data. This is not part of the regular Gym API.
+    # TODO: Maybe configure can be used.
+    self.environment.output_directory = os.path.join(output_directory, 'environment')
+    self.environment.restore_checkpoint = restore
 
   def __del__(self):
     self.environment.monitor.close()
@@ -97,6 +101,10 @@ class Manager(object):
       # Test.
       rewards = []
       for i in range(self.environment.spec.trials):
+        # HACK to pass information to environment. This is not part of the regular Gym API.
+        # TODO: Maybe configure can be used.
+        self.environment.is_training = False
+        self.environment.current_training_step = num_training_timesteps
         rewards.append(self.RunEpisode(is_training=False, record_video=i < self.options.num_recorded_runs)[0])
       average_reward = self.WriteResultSummary(num_training_timesteps, rewards, is_training=False)
       self.WriteMovieSummary(num_training_timesteps)
@@ -111,6 +119,9 @@ class Manager(object):
       num_episodes = 0
       rewards = []
       while training_timesteps < self.options.evaluate_after_timesteps:
+        # HACK to pass information to environment. This is not part of the regular Gym API.
+        # TODO: Maybe configure can be used.
+        self.environment.is_training = True
         r, t = self.RunEpisode(is_training=True)
         rewards.append(r)
         training_timesteps += t
@@ -131,7 +142,6 @@ class Manager(object):
 
     self.agent.Reset()
     observation = self.environment.reset()
-    self.environment.is_training = is_training  # HACK. Ignore.
     while not done:
       if show and not self.options.disable_rendering:
         self.environment.render()
