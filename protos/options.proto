@@ -6,6 +6,8 @@ message Options {
   optional int32 evaluate_after_timesteps = 2 [default = 10000];
   optional int32 max_timesteps = 3 [default = 1000000];
   optional bool disable_rendering = 4;
+  optional int32 num_recorded_runs = 23 [default = 1];
+  optional bool record_gif = 24 [default = true];
 
   // Agent options.
   optional string device = 5 [default = "/cpu:0"];

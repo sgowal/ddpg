@@ -70,7 +70,7 @@ class Manager(object):
     return mean_value
 
   def WriteMovieSummary(self, timestep):
-    if not has_moviepy or self.options.disable_rendering:
+    if not has_moviepy or self.options.disable_rendering or not self.options.record_gif:
       return
     # Get latest movie.
     movie_filename = max(glob.iglob(os.path.join(self.monitoring_path, 'openaigym.video.*.mp4')),
@@ -97,7 +97,7 @@ class Manager(object):
       # Test.
       rewards = []
       for i in range(self.environment.spec.trials):
-        rewards.append(self.RunEpisode(is_training=False, record_video=i == 0)[0])
+        rewards.append(self.RunEpisode(is_training=False, record_video=i < self.options.num_recorded_runs)[0])
       average_reward = self.WriteResultSummary(num_training_timesteps, rewards, is_training=False)
       self.WriteMovieSummary(num_training_timesteps)
       if self.environment.spec.reward_threshold and average_reward > self.environment.spec.reward_threshold:
@@ -131,6 +131,7 @@ class Manager(object):
 
     self.agent.Reset()
     observation = self.environment.reset()
+    self.environment.is_training = is_training  # HACK. Ignore.
     while not done:
       if show and not self.options.disable_rendering:
         self.environment.render()
