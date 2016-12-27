@@ -39,10 +39,6 @@ class Manager(object):
     self.train_writer = tf.train.SummaryWriter(os.path.join(output_directory, 'train'))
     # Upon restore, the agent knows the number of training steps done so far.
     self.restored_num_training_timesteps = agent.GetLatestSavedStep()
-    # HACK to allow the environment to know where to save data. This is not part of the regular Gym API.
-    # TODO: Maybe configure can be used.
-    self.environment.output_directory = os.path.join(output_directory, 'environment')
-    self.environment.restore_checkpoint = restore
 
   def __del__(self):
     self.environment.monitor.close()
@@ -101,10 +97,6 @@ class Manager(object):
       # Test.
       rewards = []
       for i in range(self.environment.spec.trials):
-        # HACK to pass information to environment. This is not part of the regular Gym API.
-        # TODO: Maybe configure can be used.
-        self.environment.is_training = False
-        self.environment.current_training_step = num_training_timesteps
         rewards.append(self.RunEpisode(is_training=False, record_video=i < self.options.num_recorded_runs)[0])
       average_reward = self.WriteResultSummary(num_training_timesteps, rewards, is_training=False)
       self.WriteMovieSummary(num_training_timesteps)
@@ -119,9 +111,6 @@ class Manager(object):
       num_episodes = 0
       rewards = []
       while training_timesteps < self.options.evaluate_after_timesteps:
-        # HACK to pass information to environment. This is not part of the regular Gym API.
-        # TODO: Maybe configure can be used.
-        self.environment.is_training = True
         r, t = self.RunEpisode(is_training=True)
         rewards.append(r)
         training_timesteps += t
@@ -155,6 +144,54 @@ class Manager(object):
     return total_reward, timesteps
 
 
+# Special manager that is aware of additional functions used in the private environments.
+class EnvironmentPrivacyManager(Manager):
+
+  def __init__(self, environment, agent, output_directory, options, restore=False):
+    super(EnvironmentPrivacyManager, self).__init__(environment, agent, output_directory, options, restore)
+    self.environment_output_directory = os.path.join(output_directory, 'environment')
+    if restore:
+      self.environment.Restore(self.environment_output_directory)
+
+  def Run(self):
+    num_training_timesteps = self.restored_num_training_timesteps
+    while True:
+      # Test.
+      self.environment.SetMode(is_training=False)
+      rewards = []
+      for i in range(self.environment.spec.trials):
+        rewards.append(self.RunEpisode(is_training=False, record_video=i < self.options.num_recorded_runs)[0])
+      average_reward = self.WriteResultSummary(num_training_timesteps, rewards, is_training=False)
+      self.WriteMovieSummary(num_training_timesteps)
+      if self.environment.spec.reward_threshold and average_reward > self.environment.spec.reward_threshold:
+        LOG.info('Surpassing reward threshold of %.2f. Stopping...', self.environment.spec.reward_threshold)
+        break
+      if num_training_timesteps >= self.options.max_timesteps:
+        break
+
+      # Train.
+      self.environment.SetMode(is_training=True)
+      training_timesteps = 0
+      num_episodes = 0
+      rewards = []
+      while training_timesteps < self.options.evaluate_after_timesteps:
+        r, t = self.RunEpisode(is_training=True)
+        rewards.append(r)
+        training_timesteps += t
+        num_episodes += 1
+        # Break if we go over timestep limit.
+        if num_training_timesteps + training_timesteps >= self.options.max_timesteps:
+          break
+      num_training_timesteps += training_timesteps
+      self.WriteResultSummary(num_training_timesteps, rewards, is_training=True)
+      self.agent.Save(num_training_timesteps)
+      self.environment.Save(self.environment_output_directory, num_training_timesteps)
+
+
 def Start(environment, agent, output_directory, options, restore=False):
-  manager = Manager(environment, agent, output_directory, options, restore=restore)
+  try:
+    environment.HasSpecialFunctions()
+    manager = EnvironmentPrivacyManager(environment, agent, output_directory, options, restore=restore)
+  except AttributeError:
+    manager = Manager(environment, agent, output_directory, options, restore=restore)
   manager.Run()
