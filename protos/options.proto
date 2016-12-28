@@ -30,6 +30,16 @@ message Options {
   optional bool use_actor_batch_normalization = 16 [default = true];
   optional bool use_critic_batch_normalization = 17 [default = true];
   optional double batch_normalization_decay = 18 [default = 0.99];
+
+  // Privacy options. Feel free to ignore (unless you want to reproduce the results shown in "TODO").
+  message PrivacyOptions {
+    enum Mode {
+      ALTERNATE = 0;
+      SIMULTANEOUS = 1;
+    }
+    optional Mode mode = 1 [default = ALTERNATE];
+  }
+  optional PrivacyOptions privacy = 25;
 }
 
 // Message that lists multiple option variants to run.

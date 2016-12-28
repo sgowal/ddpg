@@ -6,6 +6,8 @@ import numpy as np
 import os
 import tensorflow as tf
 
+import options_pb2
+
 # Logging.
 LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
@@ -43,7 +45,7 @@ class Manager(object):
   def __del__(self):
     self.environment.monitor.close()
 
-  def WriteResultSummary(self, timestep, values, is_training=False):
+  def WriteResultSummary(self, timestep, values, is_training=False, postfix=''):
     values = np.array(values)
     min_value = np.min(values)
     max_value = np.max(values)
@@ -53,20 +55,20 @@ class Manager(object):
     std_value = np.std(values)
     hist, bin_edges = np.histogram(values, bins=10)
     summary = tf.Summary(value=[
-        tf.Summary.Value(tag='Rewards', histo=tf.HistogramProto(
+        tf.Summary.Value(tag='Rewards' + postfix, histo=tf.HistogramProto(
             min=min_value, max=max_value, sum=sum_value, sum_squares=sum_squares_value,
             bucket_limit=bin_edges[1:], bucket=hist)),
-        tf.Summary.Value(tag=AVERAGE_REWARD_TAG, simple_value=mean_value),
-        tf.Summary.Value(tag=STDDEV_REWARD_TAG, simple_value=std_value),
+        tf.Summary.Value(tag=AVERAGE_REWARD_TAG + postfix, simple_value=mean_value),
+        tf.Summary.Value(tag=STDDEV_REWARD_TAG + postfix, simple_value=std_value),
     ])
     if is_training:
       self.train_writer.add_summary(summary, timestep)
     else:
       self.test_writer.add_summary(summary, timestep)
     # Verbose output.
-    LOG.info(u'%d-episode %s average reward (after %d timesteps): %.2f ± %.2f',
+    LOG.info(u'%d-episode %s average reward (after %d timesteps): %.2f ± %.2f%s',
              len(values), 'training' if is_training else 'evaluation',
-             timestep, mean_value, std_value)
+             timestep, mean_value, std_value, postfix)
     return mean_value
 
   def WriteMovieSummary(self, timestep):
@@ -144,6 +146,16 @@ class Manager(object):
     return total_reward, timesteps
 
 
+def Start(environment, agent, output_directory, options, restore=False):
+  try:
+    environment.HasSpecialFunctions()
+    manager = EnvironmentPrivacyManager(environment, agent, output_directory, options, restore=restore)
+  except AttributeError:
+    manager = Manager(environment, agent, output_directory, options, restore=restore)
+  manager.Run()
+
+
+# IGNORE what is below unless you are interested in the privacy code.
 # Special manager that is aware of additional functions used in the private environments.
 class EnvironmentPrivacyManager(Manager):
 
@@ -152,16 +164,26 @@ class EnvironmentPrivacyManager(Manager):
     self.environment_output_directory = os.path.join(output_directory, 'environment')
     if restore:
       self.environment.Restore(self.environment_output_directory)
+    else:
+      os.makedirs(self.environment_output_directory)
 
   def Run(self):
     num_training_timesteps = self.restored_num_training_timesteps
     while True:
       # Test.
-      self.environment.SetMode(is_training=False)
+      self.environment.SetTrainingMode(is_training=False)
       rewards = []
+      performance_rewards = []
+      privacy_rewards = []
       for i in range(self.environment.spec.trials):
-        rewards.append(self.RunEpisode(is_training=False, record_video=i < self.options.num_recorded_runs)[0])
+        self.environment.SetEpisodeNumber(i)
+        r, t, performance_reward, privacy_reward = self.RunEpisode(is_training=False, record_video=i < self.options.num_recorded_runs)
+        rewards.append(r)
+        performance_rewards.append(performance_reward)
+        privacy_rewards.append(privacy_reward)
       average_reward = self.WriteResultSummary(num_training_timesteps, rewards, is_training=False)
+      self.WriteResultSummary(num_training_timesteps, performance_rewards, is_training=False, postfix=' (preformance)')
+      self.WriteResultSummary(num_training_timesteps, privacy_rewards, is_training=False, postfix=' (privacy)')
       self.WriteMovieSummary(num_training_timesteps)
       if self.environment.spec.reward_threshold and average_reward > self.environment.spec.reward_threshold:
         LOG.info('Surpassing reward threshold of %.2f. Stopping...', self.environment.spec.reward_threshold)
@@ -170,12 +192,21 @@ class EnvironmentPrivacyManager(Manager):
         break
 
       # Train.
-      self.environment.SetMode(is_training=True)
+      self.environment.SetTrainingMode(is_training=self.options.privacy.mode == options_pb2.Options.PrivacyOptions.SIMULTANEOUS)
+      self.environment.SetEpisodeNumber(0)
       training_timesteps = 0
       num_episodes = 0
       rewards = []
       while training_timesteps < self.options.evaluate_after_timesteps:
-        r, t = self.RunEpisode(is_training=True)
+        self.environment.SetEpisodeNumber(num_episodes)
+        r, t, _, _ = self.RunEpisode(is_training=True)
+        # When alternating between envrionment training and testing, run another episode without
+        # training the agent.
+        if self.options.privacy.mode == options_pb2.Options.PrivacyOptions.ALTERNATE:
+          self.environment.SetTrainingMode(is_training=True)
+          self.RunEpisode(is_training=False)
+          self.environment.SetTrainingMode(is_training=False)
+
         rewards.append(r)
         training_timesteps += t
         num_episodes += 1
@@ -187,11 +218,28 @@ class EnvironmentPrivacyManager(Manager):
       self.agent.Save(num_training_timesteps)
       self.environment.Save(self.environment_output_directory, num_training_timesteps)
 
+  def RunEpisode(self, is_training=False, record_video=False, show=False):
+    self.environment.monitor.configure(lambda _: record_video and not self.options.disable_rendering,
+                                       mode='training' if is_training else 'evaluation')
+    total_reward = 0.
+    timesteps = 0
+    done = False
 
-def Start(environment, agent, output_directory, options, restore=False):
-  try:
-    environment.HasSpecialFunctions()
-    manager = EnvironmentPrivacyManager(environment, agent, output_directory, options, restore=restore)
-  except AttributeError:
-    manager = Manager(environment, agent, output_directory, options, restore=restore)
-  manager.Run()
+    total_privacy_reward = 0.
+    total_performance_reward = 0.
+
+    self.agent.Reset()
+    observation = self.environment.reset()
+    while not done:
+      if show and not self.options.disable_rendering:
+        self.environment.render()
+      self.agent.Observe(observation)
+      action = self.agent.Act(is_training=is_training)
+      observation, reward, done, info = self.environment.step(action)
+      total_reward += reward
+      total_performance_reward += info['performance_reward']
+      total_privacy_reward += info['privacy_reward']
+      timesteps += 1
+      done = (timesteps >= self.options.max_timesteps_per_episode) or done
+      self.agent.GiveReward(reward, done, observation, is_training=is_training)
+    return total_reward, timesteps, total_performance_reward, total_privacy_reward
