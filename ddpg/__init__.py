@@ -1,5 +1,5 @@
 from agent import Agent
-from manager import Start
+from core import Start
 from manager import AVERAGE_REWARD_TAG
 from manager import STDDEV_REWARD_TAG
 
