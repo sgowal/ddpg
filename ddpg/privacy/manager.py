@@ -5,7 +5,9 @@ import os
 import pickle
 
 from .. import manager
-from .. import options_pb2
+from .. import privacy_options_pb2
+
+import utils
 
 # Logging.
 LOG = logging.getLogger(__name__)
@@ -22,6 +24,7 @@ class EnvironmentPrivacyManager(manager.Manager):
       self.environment.Restore(self.environment_output_directory)
     else:
       os.makedirs(self.environment_output_directory)
+    self.environment.SetOptions(options.privacy)
 
   def Run(self):
     num_training_timesteps = self.restored_num_training_timesteps
@@ -31,42 +34,25 @@ class EnvironmentPrivacyManager(manager.Manager):
       rewards = []
       performance_rewards = []
       privacy_rewards = []
-      # HACK: Specific to the Private-Cart-v0 environment.
-      left_trajectories = []
-      right_trajectories = []
+      # Store trajectories.
+      trajectories = []
+      for _ in range(len(self.environment.TargetLabels())):
+        trajectories.append([])
       for i in range(self.environment.spec.trials):
         r, t, performance_reward, privacy_reward, trajectory = self.RunEpisode(is_training=False, record_video=i < self.options.num_recorded_runs)
         rewards.append(r)
         performance_rewards.append(performance_reward)
         privacy_rewards.append(privacy_reward)
-        # HACK: Specific to the Private-Cart-v0 environment.
-        if self.environment.GetChosenTarget() == 0:
-          left_trajectories.append(trajectory)
-        else:
-          right_trajectories.append(trajectory)
+        trajectories[self.environment.GetChosenTarget()].append(trajectory)
       average_reward = self.WriteResultSummary(num_training_timesteps, rewards, is_training=False)
       self.WriteResultSummary(num_training_timesteps, performance_rewards, is_training=False, postfix=' (preformance)')
       self.WriteResultSummary(num_training_timesteps, privacy_rewards, is_training=False, postfix=' (privacy)')
       self.WriteMovieSummary(num_training_timesteps)
-      if self.options.privacy.plot_trajectories:
-        # HACK: Specific to the Private-Cart-v0 environment.
-        plt.figure()
-        for t in right_trajectories:
-          plt.plot(t[:, 0], np.arange(t.shape[0]) * 0.02, color='lightgray')
-        for t in left_trajectories:
-          plt.plot(t[:, 0], np.arange(t.shape[0]) * 0.02, color='lightcoral')
-        plt.plot([0.8, 0.8], [0, 1.6], 'k--')
-        plt.plot([-0.8, -0.8], [0, 1.6], 'k--')
-        plt.ylim([0, 1.6])
-        plt.xlim([-1., 1.])
-        plt.xlabel('position')
-        plt.ylabel('time')
-        plt.savefig(os.path.join(self.monitoring_path, 'trajectories_%06d.eps' % num_training_timesteps), format='eps')
+      if self.options.privacy.save_trajectories:
+        analyzer = utils.TrajectoryAnalyzer(trajectories=trajectories, labels=self.environment.TargetLabels())
+        analyzer.PlotTrajectories()
         plt.savefig(os.path.join(self.monitoring_path, 'trajectories_%06d.png' % num_training_timesteps), format='png')
-        with open(os.path.join(self.monitoring_path, 'trajectories_%06d.pickle' % num_training_timesteps), 'wb') as fp:
-          pickler = pickle.Pickler(fp, -1)
-          pickler.dump(left_trajectories)
-          pickler.dump(right_trajectories)
+        analyzer.Save(os.path.join(self.monitoring_path, 'trajectories_%06d.pickle' % num_training_timesteps))
       if self.environment.spec.reward_threshold and average_reward > self.environment.spec.reward_threshold:
         LOG.info('Surpassing reward threshold of %.2f. Stopping...', self.environment.spec.reward_threshold)
         break
@@ -78,7 +64,7 @@ class EnvironmentPrivacyManager(manager.Manager):
       num_episodes = 0
       rewards = []
       while training_timesteps < self.options.evaluate_after_timesteps:
-        if self.options.privacy.mode == options_pb2.Options.PrivacyOptions.ALTERNATE:
+        if self.options.privacy.mode == privacy_options_pb2.PrivacyOptions.ALTERNATE:
           self.environment.SetTrainingMode(is_training=False)
           for i in range(self.options.privacy.ddpg_training_episodes):
             r, t, _, _, _ = self.RunEpisode(is_training=True)
@@ -115,6 +101,7 @@ class EnvironmentPrivacyManager(manager.Manager):
     self.agent.Reset()
     observation = self.environment.reset()
     trajectory = [self.environment.GetState()]
+    actions = []
     while not done:
       if show and not self.options.disable_rendering:
         self.environment.render()
@@ -127,6 +114,10 @@ class EnvironmentPrivacyManager(manager.Manager):
       timesteps += 1
       done = (timesteps >= self.options.max_timesteps_per_episode) or done
       self.agent.GiveReward(reward, done, observation, is_training=is_training)
-      trajectory.append(self.environment.GetState())
+      if not done:
+        trajectory.append(self.environment.GetState())
+      actions.append(action)
     trajectory = np.vstack(trajectory)
+    actions = np.vstack(actions)
+    trajectory = np.hstack([trajectory, actions])
     return total_reward, timesteps, total_performance_reward, total_privacy_reward, trajectory

@@ -1,1 +1,2 @@
 from manager import EnvironmentPrivacyManager
+from utils import TrajectoryAnalyzer

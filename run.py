@@ -36,6 +36,8 @@ flags.DEFINE_string('options', None, 'ddpg.Options protocol buffer in ASCII form
 flags.DEFINE_string('option_variants', None,
                     'ddpg.OptionVariants protocol buffer in ASCII format. Runs the pipeline '
                     'for each option variant sequentially. The --options field is used as default values.')
+flags.DEFINE_string('option_variants_filename', None,
+                    'Same as --option_variants but reads the options from a file.')
 FLAGS = flags.FLAGS
 
 
@@ -76,6 +78,11 @@ def Run():
   assert FLAGS.output_directory, '--output_directory must be specified.'
   assert FLAGS.environment, '--environment must be specified.'
   assert FLAGS.run_many >= 1, '--run_many must be greater than 1.'
+
+  if FLAGS.option_variants_filename:
+    assert FLAGS.option_variants is None, 'Cannot specify both --option_variants and --option_variants_filename.'
+    with open(FLAGS.option_variants_filename) as fp:
+      FLAGS.option_variants = fp.read()
 
   if not FLAGS.restore:
     if not CreateDirectory(FLAGS.output_directory, FLAGS.force):

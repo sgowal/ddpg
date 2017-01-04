@@ -1,5 +1,8 @@
 package ddpg;
 
+import "privacy_options.proto";
+
+// Next ID: 26.
 message Options {
   // Manager options.
   optional int32 max_timesteps_per_episode = 1 [default = 10000];
@@ -31,21 +34,6 @@ message Options {
   optional bool use_critic_batch_normalization = 17 [default = true];
   optional double batch_normalization_decay = 18 [default = 0.99];
 
-  // Privacy options. Feel free to ignore (unless you want to reproduce the results shown in "TODO").
-  message PrivacyOptions {
-    enum Mode {
-      ALTERNATE = 0;
-      SIMULTANEOUS = 1;
-    }
-    optional Mode mode = 1 [default = ALTERNATE];
-
-    // In alternate mode, ddpg is trained (with exploration) for ddpg_training_episodes followed by
-    // privacy_training_episode where the agent is deterministic.
-    optional int32 ddpg_training_episodes = 2 [default = 10];
-    optional int32 privacy_training_episodes = 3 [default = 40];
-
-    optional bool plot_trajectories = 4;
-  }
   optional PrivacyOptions privacy = 25;
 }
 
