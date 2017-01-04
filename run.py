@@ -138,9 +138,9 @@ def Run():
       # Create Agent that will interact with the environment.
       agent = ddpg.Agent(environment.action_space, environment.observation_space,
                          checkpoint_directory=checkpoint_directory,
-                         options=options, restore=FLAGS.restore)
+                         options=variant_options, restore=FLAGS.restore)
       # Start experiment.
-      ddpg.Start(environment, agent, output_directory, options=options,
+      ddpg.Start(environment, agent, output_directory, options=variant_options,
                  restore=FLAGS.restore)
       # Clear TensorFlow.
       tf.reset_default_graph()

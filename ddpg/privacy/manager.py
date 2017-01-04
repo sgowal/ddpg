@@ -52,6 +52,7 @@ class EnvironmentPrivacyManager(manager.Manager):
         analyzer = utils.TrajectoryAnalyzer(trajectories=trajectories, labels=self.environment.TargetLabels())
         analyzer.PlotTrajectories()
         plt.savefig(os.path.join(self.monitoring_path, 'trajectories_%06d.png' % num_training_timesteps), format='png')
+        plt.close()
         analyzer.Save(os.path.join(self.monitoring_path, 'trajectories_%06d.pickle' % num_training_timesteps))
       if self.environment.spec.reward_threshold and average_reward > self.environment.spec.reward_threshold:
         LOG.info('Surpassing reward threshold of %.2f. Stopping...', self.environment.spec.reward_threshold)
