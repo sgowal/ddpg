@@ -1,7 +1,7 @@
 package ddpg;
 
 // Privacy options. Feel free to ignore (unless you want to reproduce the results shown in "TODO").
-// Next ID: 26.
+// Next ID: 27.
 message PrivacyOptions {
   enum Mode {
     ALTERNATE = 0;
@@ -18,17 +18,20 @@ message PrivacyOptions {
 
   // Training options for the ALTERNATE and SIMULTANEOUS modes.
   optional int32 switch_timestep = 5 [default = 40];
+  // When set to 0, uses a linear schedule rather than a sigmoid.
   optional double switch_privacy_slope = 6 [default = 0.2];
   optional double switch_privacy_min = 7 [default = 0];
   optional double switch_privacy_max = 8 [default = 1];
   optional double privacy_multiplier = 9 [default = 1];
   optional double privacy_smoothing_decay = 25 [default = 0.2];
+  // When set to 0, uses a linear schedule rather than a sigmoid.
   optional double switch_performance_slope = 10 [default = 0.1];
   optional double switch_performance_min = 11 [default = 0.1];
   optional double switch_performance_max = 12 [default = 1];
   optional double performance_multiplier = 13 [default = 1];
+  optional double action_multiplier = 26 [default = 1];
   optional int32 batch_size = 14 [default = 64];
-  optional int32 train_every_n_timesteps = 15 [default = 1];
+  optional int32 train_every_n_timesteps = 15 [default = 10];
   optional int32 add_to_replay_memory_until_timestep = 16 [default = 60];
   optional int32 warmup_timesteps = 17 [default = 800];
   optional int32 replay_memory_size = 18 [default = 800];

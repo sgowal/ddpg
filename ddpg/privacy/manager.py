@@ -77,7 +77,7 @@ class EnvironmentPrivacyManager(manager.Manager):
           num_episodes += self.options.privacy.ddpg_training_episodes
         else:
           self.environment.SetTrainingMode(is_training=True)
-          r, t, _, _ = self.RunEpisode(is_training=True)
+          r, t, _, _, _ = self.RunEpisode(is_training=True)
           rewards.append(r)
           training_timesteps += t
           num_episodes += 1

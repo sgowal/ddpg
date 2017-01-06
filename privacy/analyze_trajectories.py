@@ -16,16 +16,17 @@ import ddpg.privacy
 
 flags = tf.app.flags
 flags.DEFINE_string('trajectories', None, 'File containing the privacy trajectories (can be a glob).')
-flags.DEFINE_integer('switching_point', 40,
-                     'Compute privacy on trajectory points before this many timesteps. '
-                     'Compute performance on trajectory points after this many timesteps.')
+flags.DEFINE_string('switching_points', '35-45',
+                    'Compute privacy on trajectory points before this many timesteps. '
+                    'Compute performance on trajectory points after this many timesteps.')
 flags.DEFINE_bool('disable_plot', False, 'Disable plots.')
+flags.DEFINE_bool('boxplot', False, 'When there are multiple trajectory files, uses boxplots instead of time series.')
 flags.DEFINE_string('save_filename_prefix', None, 'Saves plots with a given prefix.')
 FLAGS = flags.FLAGS
 
 
 def RunSingle(filename):
-  analyzer = ddpg.privacy.TrajectoryAnalyzer(cutoff=FLAGS.switching_point)
+  analyzer = ddpg.privacy.TrajectoryAnalyzer(cutoffs=[int(p) for p in FLAGS.switching_points.split('-')])
   analyzer.Load(FLAGS.trajectories)
 
   # Plot trajectories.
@@ -42,8 +43,17 @@ def RunSingle(filename):
     plt.savefig(FLAGS.save_filename_prefix + 'distributions.eps', format='eps')
     print('Saved distributions: %s' % (FLAGS.save_filename_prefix + 'distributions.[png|eps]'))
 
-  # Compute 2D KS-distance.
-  metrics = analyzer.ComputeMetrics()
+  # Compute metrics.
+  analyzer.ComputeMetrics(plot_ks_distance=True)
+  if FLAGS.save_filename_prefix:
+    plt.savefig(FLAGS.save_filename_prefix + 'ks_distance.png', format='png')
+    plt.savefig(FLAGS.save_filename_prefix + 'ks_distance.eps', format='eps')
+    print('Saved distributions: %s' % (FLAGS.save_filename_prefix + 'ks_distance.[png|eps]'))
+  metrics = analyzer.ComputeMetrics(plot_leakage=True)
+  if FLAGS.save_filename_prefix:
+    plt.savefig(FLAGS.save_filename_prefix + 'leakage.png', format='png')
+    plt.savefig(FLAGS.save_filename_prefix + 'leakage.eps', format='eps')
+    print('Saved distributions: %s' % (FLAGS.save_filename_prefix + 'leakage.[png|eps]'))
   for k, v in metrics.iteritems():
     print('%s: %.3f' % (k, v))
   if FLAGS.save_filename_prefix:
@@ -73,7 +83,7 @@ def RunMultiple(filenames):
   values = collections.defaultdict(lambda: collections.defaultdict(lambda: []))
   for name, filenames in groups.iteritems():
     print('Analyzing', name)
-    analyzer = ddpg.privacy.TrajectoryAnalyzer(cutoff=FLAGS.switching_point)
+    analyzer = ddpg.privacy.TrajectoryAnalyzer(cutoffs=[int(p) for p in FLAGS.switching_points.split('-')])
     for filename in filenames:
       analyzer.Load(filename)
       timestep = int(os.path.splitext(filename)[0].rsplit('_', 1)[1])
@@ -84,16 +94,27 @@ def RunMultiple(filenames):
   max_timestep = 0
   for i, (metric_name, v_dict) in enumerate(values.iteritems()):
     plt.figure()
-    colors = _GetColors(len(v_dict))
-    for (k, v), color in zip(v_dict.iteritems(), colors):
-      timesteps, vs = zip(*sorted(v))
-      plt.plot(timesteps, vs, color=color, lw=2, label=k)
-      max_timestep = max(max_timestep, np.max(timesteps))
-    plt.legend(loc='lower right')
-    plt.xlim((0, max_timestep))
-    plt.grid('on')
-    plt.xlabel('Step')
+    if FLAGS.boxplot:
+      data = []
+      labels = []
+      for k, v in sorted(v_dict.iteritems()):
+        _, vs = zip(*sorted(v))
+        data.append(vs[2:])  # Ignore first 2 steps.
+        labels.append(k)
+      plt.boxplot(data)
+      plt.xticks(range(1, len(data) + 1), labels, rotation='vertical')
+    else:
+      colors = _GetColors(len(v_dict))
+      for (k, v), color in zip(v_dict.iteritems(), colors):
+        timesteps, vs = zip(*sorted(v))
+        plt.plot(timesteps, vs, color=color, lw=2, label=k)
+        max_timestep = max(max_timestep, np.max(timesteps))
+      plt.legend(loc='lower right')
+      plt.xlim((0, max_timestep))
+      plt.grid('on')
+      plt.xlabel('Step')
     plt.ylabel(metric_name)
+    plt.tight_layout()
     if FLAGS.save_filename_prefix:
       plt.savefig(FLAGS.save_filename_prefix + 'metrics_%d.png' % i, format='png')
       plt.savefig(FLAGS.save_filename_prefix + 'metrics_%d.eps' % i, format='eps')
