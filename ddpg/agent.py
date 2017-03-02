@@ -49,9 +49,9 @@ class Agent(object):
   def Observe(self, observation):
     self.observation = observation
 
-  def Act(self, is_training=False):
+  def Act(self, add_noise=0.):
     # Act randomly initially.
-    action = self.action = self.model.Act(self.observation, add_noise=is_training)
+    action = self.action = self.model.Act(self.observation, add_noise=add_noise)
     if not self.continuous_actions:
       action = np.argmax(self.action)
     return action

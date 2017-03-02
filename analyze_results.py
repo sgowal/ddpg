@@ -44,9 +44,6 @@ def Run():
 
   if FLAGS.group_by is not None:
     regexps = FLAGS.group_by.split(',')
-    # common_directory = os.path.commonprefix(regexps)
-    # if common_directory and common_directory[-1] != '/':
-    #   common_directory = os.path.dirname(common_directory) + '/'
     groups = collections.defaultdict(lambda: [])
     for i, (k, v) in enumerate(average_reward.iteritems()):
       valid_regexps = []
@@ -72,8 +69,7 @@ def Run():
         expanded_mean[len(m):] = m[-1]
         values.append(expanded_mean)
       values = np.vstack(values)
-      # mean = np.mean(values, axis=0)
-      mean = np.median(values, axis=0)
+      mean = np.mean(values, axis=0)
       std = np.std(values, axis=0)
       for t, m, s in zip(timesteps, mean, std):
         average_reward[k].append((t, m))

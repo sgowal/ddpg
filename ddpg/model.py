@@ -63,16 +63,8 @@ class Model(object):
       single_action = self.ActorNetwork(single_input_observation, parameters_actor, name='single_actor')
       # Add exploration (using Ornstein-Uhlenbeck process) - only used when a single action is given.
       action_noise, reset_op = OrnsteinUhlenbeckProcess(
-          (1,) + self.action_shape, self.options.exploration_noise_theta, self.options.exploration_noise_sigma)
+          (1,) + self.action_shape, self.options.exploration_noise_theta, self.options.exploration_noise_sigma, name='noisy_output')
       self.reset_ops.append(reset_op)  # Should we reset between training episodes?
-      noisy_action = single_action + action_noise
-      # The model is really only insterested in actions between -1 and 1. Hence, we mirror actions if they
-      # saturate over these limits.
-      upper_bound = 1.1  # Add some margins so that saturated actions are explored more often.
-      lower_bound = -1.1
-      noisy_action = upper_bound - tf.abs(upper_bound - noisy_action)  # Mirror upper-bound.
-      noisy_action = lower_bound + tf.abs(lower_bound - noisy_action)  # Mirror lower-bound.
-      noisy_action = tf.maximum(tf.minimum(noisy_action, 1.), -1.)  # Saturate just in case.
 
       # Training actor.
       input_observation = tf.placeholder(tf.float32, shape=(None,) + self.observation_shape)
@@ -116,15 +108,23 @@ class Model(object):
       # Create relevant functions.
       with self.session.as_default():
         self.Reset = WrapComputationalGraph([], self.reset_ops)
-        self._NoisyAct = WrapComputationalGraph(single_input_observation, noisy_action)
+        self._Noise = WrapComputationalGraph([], action_noise)
         self._Act = WrapComputationalGraph(single_input_observation, single_action)
         self.Train = WrapComputationalGraph(
             [input_action, input_observation, input_reward, input_done, input_next_observation, input_weight],
             [train_actor, train_critic, td_error], return_only=2)
 
-  def Act(self, observation, add_noise=False):
+  def Act(self, observation, add_noise=0.):
     observation = np.expand_dims(observation, axis=0)
-    action = self._NoisyAct(observation) if add_noise else self._Act(observation)
+    action = self._Act(observation)
+    if add_noise:
+      action_noise = self._Noise()
+      action += action_noise * add_noise
+      upper_bound = 1.1  # Add some margins so that saturated actions are explored more often.
+      lower_bound = -1.1
+      action = upper_bound - np.abs(upper_bound - action)  # Mirror upper-bound.
+      action = lower_bound + np.abs(lower_bound - action)  # Mirror lower-bound.
+      action = np.clip(action, -1., 1.)  # Saturate just in case.
     return action[0, ...]
 
   def ActorNetworkParameters(self, name='actor'):
@@ -295,8 +295,8 @@ def PropagateToTargetNetwork(params, decay=0.99, name='moving_average'):
   return target_params, op
 
 
-def OrnsteinUhlenbeckProcess(shape, theta, sigma):
-  with tf.variable_scope('output'):
+def OrnsteinUhlenbeckProcess(shape, theta, sigma, name=None):
+  with tf.variable_scope(name or 'output'):
     initial_noise = tf.zeros(shape)
     noise = tf.get_variable('noise', shape, initializer=tf.constant_initializer(0.), trainable=False)
     reset_op = noise.assign(initial_noise)

@@ -27,7 +27,7 @@ class EnvironmentPrivacyManager(manager.Manager):
     self.environment.SetOptions(options.privacy)
 
   def Run(self):
-    num_training_timesteps = self.restored_num_training_timesteps
+    self.num_training_timesteps = self.restored_num_training_timesteps
     while True:
       # Test.
       self.environment.SetTrainingMode(is_training=False)
@@ -44,20 +44,20 @@ class EnvironmentPrivacyManager(manager.Manager):
         performance_rewards.append(performance_reward)
         privacy_rewards.append(privacy_reward)
         trajectories[self.environment.GetChosenTarget()].append(trajectory)
-      average_reward = self.WriteResultSummary(num_training_timesteps, rewards, is_training=False)
-      self.WriteResultSummary(num_training_timesteps, performance_rewards, is_training=False, postfix=' (preformance)')
-      self.WriteResultSummary(num_training_timesteps, privacy_rewards, is_training=False, postfix=' (privacy)')
-      self.WriteMovieSummary(num_training_timesteps)
+      average_reward = self.WriteResultSummary(self.num_training_timesteps, rewards, is_training=False)
+      self.WriteResultSummary(self.num_training_timesteps, performance_rewards, is_training=False, postfix=' (preformance)')
+      self.WriteResultSummary(self.num_training_timesteps, privacy_rewards, is_training=False, postfix=' (privacy)')
+      self.WriteMovieSummary(self.num_training_timesteps)
       if self.options.privacy.save_trajectories:
         analyzer = utils.TrajectoryAnalyzer(trajectories=trajectories, labels=self.environment.TargetLabels())
         analyzer.PlotTrajectories()
-        plt.savefig(os.path.join(self.monitoring_path, 'trajectories_%06d.png' % num_training_timesteps), format='png')
+        plt.savefig(os.path.join(self.monitoring_path, 'trajectories_%06d.png' % self.num_training_timesteps), format='png')
         plt.close()
-        analyzer.Save(os.path.join(self.monitoring_path, 'trajectories_%06d.pickle' % num_training_timesteps))
+        analyzer.Save(os.path.join(self.monitoring_path, 'trajectories_%06d.pickle' % self.num_training_timesteps))
       if self.environment.spec.reward_threshold and average_reward > self.environment.spec.reward_threshold:
         LOG.info('Surpassing reward threshold of %.2f. Stopping...', self.environment.spec.reward_threshold)
         break
-      if num_training_timesteps >= self.options.max_timesteps:
+      if self.num_training_timesteps >= self.options.max_timesteps:
         break
 
       # Train.
@@ -82,12 +82,12 @@ class EnvironmentPrivacyManager(manager.Manager):
           training_timesteps += t
           num_episodes += 1
         # Break if we go over timestep limit.
-        if num_training_timesteps + training_timesteps >= self.options.max_timesteps:
+        if self.num_training_timesteps + training_timesteps >= self.options.max_timesteps:
           break
-      num_training_timesteps += training_timesteps
-      self.WriteResultSummary(num_training_timesteps, rewards, is_training=True)
-      self.agent.Save(num_training_timesteps)
-      self.environment.Save(self.environment_output_directory, num_training_timesteps)
+      self.num_training_timesteps += training_timesteps
+      self.WriteResultSummary(self.num_training_timesteps, rewards, is_training=True)
+      self.agent.Save(self.num_training_timesteps)
+      self.environment.Save(self.environment_output_directory, self.num_training_timesteps)
 
   def RunEpisode(self, is_training=False, record_video=False, show=False):
     self.environment.monitor.configure(lambda _: record_video and not self.options.disable_rendering,
@@ -107,7 +107,7 @@ class EnvironmentPrivacyManager(manager.Manager):
       if show and not self.options.disable_rendering:
         self.environment.render()
       self.agent.Observe(observation)
-      action = self.agent.Act(is_training=is_training)
+      action = self.agent.Act(add_noise=float(is_training))
       observation, reward, done, info = self.environment.step(action)
       total_reward += reward
       total_performance_reward += info['performance_reward']

@@ -135,7 +135,7 @@ class Manager(object):
       if show and not self.options.disable_rendering:
         self.environment.render()
       self.agent.Observe(observation)
-      action = self.agent.Act(is_training=is_training)
+      action = self.agent.Act(add_noise=1. if is_training else 0.)
       observation, reward, done, _ = self.environment.step(action)
       total_reward += reward
       timesteps += 1

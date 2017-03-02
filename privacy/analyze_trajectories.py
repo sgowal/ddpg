@@ -5,7 +5,9 @@ import glob
 import matplotlib.pylab as plt
 import numpy as np
 import os
+import re
 import tensorflow as tf
+import tqdm
 
 # HACK to be able to hide binary in a separate folder.
 import sys
@@ -15,12 +17,15 @@ sys.path.insert(0, parent_directory)
 import ddpg.privacy
 
 flags = tf.app.flags
-flags.DEFINE_string('trajectories', None, 'File containing the privacy trajectories (can be a glob).')
+flags.DEFINE_string('trajectory_directory', None, 'Directory where privacy trajectories are stored.')
+flags.DEFINE_string('trajectory_file', None, 'Specific trajectory file for deeper analysis.')
+flags.DEFINE_string('show_only', None, 'Comma-separated list of regular expressions that are matched against all subdirectories to include in the report.')
+flags.DEFINE_string('group_by', None, 'Comma-separated list of regular expressions that are used to average across multiple runs.')
+
 flags.DEFINE_string('switching_points', '35-45',
                     'Compute privacy on trajectory points before this many timesteps. '
                     'Compute performance on trajectory points after this many timesteps.')
 flags.DEFINE_bool('disable_plot', False, 'Disable plots.')
-flags.DEFINE_bool('boxplot', False, 'When there are multiple trajectory files, uses boxplots instead of time series.')
 flags.DEFINE_string('save_filename_prefix', None, 'Saves plots with a given prefix.')
 FLAGS = flags.FLAGS
 
@@ -80,55 +85,105 @@ def RunMultiple(filenames):
     canonical_name = os.path.dirname(filename[len(common_start):])[:-len(common_end)]
     groups[canonical_name].append(filename)
   # Analyze each group.
+  cutoffs = [int(p) for p in FLAGS.switching_points.split('-')]
   values = collections.defaultdict(lambda: collections.defaultdict(lambda: []))
   for name, filenames in groups.iteritems():
     print('Analyzing', name)
-    analyzer = ddpg.privacy.TrajectoryAnalyzer(cutoffs=[int(p) for p in FLAGS.switching_points.split('-')])
-    for filename in filenames:
+    analyzer = ddpg.privacy.TrajectoryAnalyzer(cutoffs=cutoffs)
+    for filename in tqdm.tqdm(filenames):
       analyzer.Load(filename)
       timestep = int(os.path.splitext(filename)[0].rsplit('_', 1)[1])
       metrics = analyzer.ComputeMetrics()
       for k, v in metrics.iteritems():
         values[k][name].append((timestep, v))
+
+  if FLAGS.group_by is not None:
+    regexps = FLAGS.group_by.split(',')
+    new_values_mean = {}
+    new_values_std = {}
+    # For all metrics.
+    for metric_name, metric_values in values.iteritems():
+      groups = collections.defaultdict(lambda: [])
+      for i, (k, v) in enumerate(metric_values.iteritems()):
+        valid_regexps = []
+        for r in regexps:
+          g = re.match(r, k)
+          if not g:
+            continue
+          valid_regexps.append('/'.join(g.groups()))
+
+        timesteps, mean = zip(*sorted(v))
+        for r in valid_regexps:
+          groups[r].append((np.array(timesteps), np.array(mean)))
+      average = collections.defaultdict(lambda: [])
+      stddev = collections.defaultdict(lambda: [])
+      for k, v in groups.iteritems():
+        timesteps = []
+        for t, _ in v:
+          if len(timesteps) < len(t):
+            timesteps = t
+        values = []
+        for _, m in v:
+          expanded_mean = np.empty_like(timesteps, dtype=np.float32)
+          expanded_mean[:len(m)] = m
+          expanded_mean[len(m):] = m[-1]
+          values.append(expanded_mean)
+        values = np.vstack(values)
+        mean = np.mean(values, axis=0)
+        std = np.std(values, axis=0)
+        for t, m, s in zip(timesteps, mean, std):
+          average[k].append((t, m))
+          stddev[k].append((t, s))
+      new_values_mean[metric_name] = average
+      new_values_std[metric_name] = stddev
+  else:
+    new_values_mean = values
+    new_values_std = None
+
   # Plot all metrics.
-  max_timestep = 0
-  for i, (metric_name, v_dict) in enumerate(values.iteritems()):
+  for j, (metric_name, metric_values) in enumerate(new_values_mean.iteritems()):
     plt.figure()
-    if FLAGS.boxplot:
-      data = []
-      labels = []
-      for k, v in sorted(v_dict.iteritems()):
-        _, vs = zip(*sorted(v))
-        data.append(vs[2:])  # Ignore first 2 steps.
-        labels.append(k)
-      plt.boxplot(data)
-      plt.xticks(range(1, len(data) + 1), labels, rotation='vertical')
-    else:
-      colors = _GetColors(len(v_dict))
-      for (k, v), color in zip(v_dict.iteritems(), colors):
-        timesteps, vs = zip(*sorted(v))
-        plt.plot(timesteps, vs, color=color, lw=2, label=k)
-        max_timestep = max(max_timestep, np.max(timesteps))
+    colors = _GetColors(len(metric_values))
+    for i, (k, v) in enumerate(metric_values.iteritems()):
+      timesteps, mean = zip(*sorted(v))
+      if new_values_std is not None:
+        _, std = zip(*sorted(new_values_std[metric_name][k]))
+      else:
+        std = 0.
+      timesteps = np.array(timesteps)
+      mean = np.array(mean)
+      std = np.array(std)
+      # Timesteps can be duplicated when restoring from prior checkpoints.
+      timesteps, unique_indices = np.unique(timesteps, return_index=True)
+      mean = mean[unique_indices]
+      std = std[unique_indices]
+      timesteps = np.array(timesteps)
+      mean = np.array(mean)
+      std = np.array(std)
+      plt.plot(timesteps, mean, color=colors[i % len(colors)], lw=2, label=k)
+      if new_values_std is not None:
+        plt.fill_between(timesteps, mean - std, mean + std, color=colors[i % len(colors)], alpha=.5)
+    if len(metric_values) > 1:
       plt.legend(loc='lower right')
-      plt.xlim((0, max_timestep))
-      plt.grid('on')
-      plt.xlabel('Step')
+    plt.xlim((0, np.max(timesteps)))
+    plt.grid('on')
+    plt.xlabel('Step')
     plt.ylabel(metric_name)
     plt.tight_layout()
     if FLAGS.save_filename_prefix:
-      plt.savefig(FLAGS.save_filename_prefix + 'metrics_%d.png' % i, format='png')
-      plt.savefig(FLAGS.save_filename_prefix + 'metrics_%d.eps' % i, format='eps')
+      plt.savefig(FLAGS.save_filename_prefix + 'metrics_%d.png' % j, format='png')
+      plt.savefig(FLAGS.save_filename_prefix + 'metrics_%d.eps' % j, format='eps')
       print('Saved metrics: %s' % (FLAGS.save_filename_prefix + 'metrics_*.[png|eps]'))
 
 
 def Run():
-  trajectory_files = sorted(list(glob.iglob(FLAGS.trajectories)), key=os.path.getctime)
-  assert trajectory_files, '%s does not match any files.' % FLAGS.trajectories
-  if len(trajectory_files) == 1:
-    RunSingle(trajectory_files[0])
-  else:
-    RunMultiple(trajectory_files)
-
+  if FLAGS.trajectory_file is not None:
+    RunSingle(FLAGS.trajectory_file)
+    return
+  file_glob = os.path.join(FLAGS.trajectory_directory, '**/trajectories_*.pickle')
+  trajectory_files = sorted(list(glob.iglob(file_glob)), key=os.path.getctime)
+  assert trajectory_files, '%s does not match any files.' % FLAGS.trajectory_directory
+  RunMultiple(trajectory_files)
   if not FLAGS.disable_plot:
     plt.show()
 
