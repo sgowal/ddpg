@@ -33,6 +33,7 @@ class ReplayMemory(object):
 
   def Sample(self, n):
     assert n <= self.size, 'Replay memory contains less than %d elements.' % n
+    # Save indices for the update function.
     self.indices, weights = self.SampleIndicesAndWeights(n)
     return (self.buffer_actions[self.indices, ...],
             self.buffer_observations[self.indices, ...],
@@ -145,6 +146,11 @@ class RankBased(ReplayMemory):
     weights = np.power(priorities * self.size, -beta)
     weights /= np.max(weights)
     return indices, weights
+
+  def Update(self, new_priorities):
+    # self.indices contains last sampled indices.
+    for key, priority in zip(self.indices, new_priorities):
+      self.sorter.Update(key, priority)
 
   def _BuildCumulativeDensity(self, n, k):
     # Memorize the previous size for which it was computed.

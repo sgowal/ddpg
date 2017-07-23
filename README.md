@@ -5,7 +5,7 @@ This implementation adds a little tweak to handle discrete action spaces and imp
 
 ## Installation
 
-Install [Gym](https://github.com/openai/gym#installation), [TensorFlow](https://www.tensorflow.org/get_started/os_setup.html), [MoviePy](http://zulko.github.io/moviepy/install.html) and [protobuf](https://github.com/google/protobuf/releases)
+Install [Gym](https://github.com/openai/gym#installation), [TensorFlow](https://www.tensorflow.org/get_started/os_setup.html), [MoviePy](http://zulko.github.io/moviepy/install.html) and [protobuf](https://github.com/google/protobuf/releases).
 
 ### Compile the needed protocol buffers:
 
