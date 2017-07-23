@@ -32,7 +32,7 @@ FLAGS = flags.FLAGS
 
 def RunSingle(filename):
   analyzer = ddpg.privacy.TrajectoryAnalyzer(cutoffs=[int(p) for p in FLAGS.switching_points.split('-')])
-  analyzer.Load(FLAGS.trajectories)
+  analyzer.Load(filename)
 
   # Plot trajectories.
   analyzer.PlotTrajectories()
@@ -179,6 +179,8 @@ def RunMultiple(filenames):
 def Run():
   if FLAGS.trajectory_file is not None:
     RunSingle(FLAGS.trajectory_file)
+    if not FLAGS.disable_plot:
+      plt.show()
     return
   file_glob = os.path.join(FLAGS.trajectory_directory, '**/trajectories_*.pickle')
   trajectory_files = sorted(list(glob.iglob(file_glob)), key=os.path.getctime)
