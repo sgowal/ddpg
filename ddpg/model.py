@@ -324,7 +324,8 @@ def BatchNormalization(input_tensor, params, decay=0.99,
     if is_training:
       # Create moving average and store in average_mean and average_var.
       ops = []
-      batch_mean, batch_var = tf.nn.moments(input_tensor, [0], name='moments')
+      with tf.device('/cpu:0'):
+        batch_mean, batch_var = tf.nn.moments(input_tensor, [0], name='moments')
       ops.append(average_mean.tensor.assign_sub((1. - decay) * (average_mean.tensor - batch_mean)))
       ops.append(average_var.tensor.assign_sub((1. - decay) * (average_var.tensor - batch_var)))
       with tf.control_dependencies(ops):
